@@ -145,3 +145,35 @@ int zc_str_replace_env(char *str, size_t str_size)
 
 	return 0;
 }
+
+size_t zc_strnlen(const char *s, size_t maxlen)
+{
+	const char *end = memchr(s, '\0', maxlen);
+	return end ? end - s : maxlen;
+}
+
+char *zc_strdup(const char *s)
+{
+	size_t len = strlen(s) + 1;
+	void *new_s = malloc(len);
+
+	if (new_s == NULL)
+		return NULL;
+
+	memcpy(new_s, s, len);
+
+	return (char *)new_s;
+}
+
+char *zc_strndup(const char *s, size_t n)
+{
+	size_t len = zc_strnlen(s, n);
+	char *new_s = malloc(len + 1);
+
+	if (new_s == NULL)
+		return NULL;
+
+	new_s[len] = '\0';
+
+	return memcpy(new_s, s, len);
+}

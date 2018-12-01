@@ -14,17 +14,17 @@
 #include "rotater.h"
 
 typedef struct zlog_conf_s {
-	char file[MAXLEN_PATH + 1];
+	char *file;
 	char mtime[20 + 1];
 
 	int strict_init;
 	size_t buf_size_min;
 	size_t buf_size_max;
 
-	char rotate_lock_file[MAXLEN_CFG_LINE + 1];
+	char *rotate_lock_file;
 	zlog_rotater_t *rotater;
 
-	char default_format_line[MAXLEN_CFG_LINE + 1];
+	char *default_format_line;
 	zlog_format_t *default_format;
 
 	unsigned int file_perms;

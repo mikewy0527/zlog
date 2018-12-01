@@ -81,6 +81,9 @@ void zlog_conf_profile(zlog_conf_t * a_conf, int flag)
 void zlog_conf_del(zlog_conf_t * a_conf)
 {
 	zc_assert(a_conf,);
+	if (a_conf->file) free(a_conf->file);
+	if (a_conf->rotate_lock_file) free(a_conf->rotate_lock_file);
+	if (a_conf->default_format_line) free(a_conf->default_format_line);
 	if (a_conf->rotater) zlog_rotater_del(a_conf->rotater);
 	if (a_conf->levels) zlog_level_list_del(a_conf->levels);
 	if (a_conf->default_format) zlog_format_del(a_conf->default_format);
@@ -96,7 +99,6 @@ static int zlog_conf_build_with_file(zlog_conf_t * a_conf);
 
 zlog_conf_t *zlog_conf_new(const char *confpath)
 {
-	int nwrite = 0;
 	int has_conf_file = 0;
 	zlog_conf_t *a_conf = NULL;
 
@@ -107,31 +109,29 @@ zlog_conf_t *zlog_conf_new(const char *confpath)
 	}
 
 	if (confpath && confpath[0] != '\0') {
-		nwrite = snprintf(a_conf->file, sizeof(a_conf->file), "%s", confpath);
+		a_conf->file = zc_strdup(confpath);
 		has_conf_file = 1;
 	} else if (getenv("ZLOG_CONF_PATH") != NULL) {
-		nwrite = snprintf(a_conf->file, sizeof(a_conf->file), "%s", getenv("ZLOG_CONF_PATH"));
+		a_conf->file = zc_strdup(getenv("ZLOG_CONF_PATH"));
 		has_conf_file = 1;
 	} else {
-		memset(a_conf->file, 0x00, sizeof(a_conf->file));
 		has_conf_file = 0;
-	}
-	if (nwrite < 0 || nwrite >= sizeof(a_conf->file)) {
-		zc_error("not enough space for path name, nwrite=[%d], errno[%d]", nwrite, errno);
-		goto err;
 	}
 
 	/* set default configuration start */
 	a_conf->strict_init = 1;
 	a_conf->buf_size_min = ZLOG_CONF_DEFAULT_BUF_SIZE_MIN;
 	a_conf->buf_size_max = ZLOG_CONF_DEFAULT_BUF_SIZE_MAX;
+
 	if (has_conf_file) {
 		/* configure file as default lock file */
-		strcpy(a_conf->rotate_lock_file, a_conf->file);
+		a_conf->rotate_lock_file = zc_strdup(a_conf->file);
 	} else {
-		strcpy(a_conf->rotate_lock_file, ZLOG_CONF_BACKUP_ROTATE_LOCK_FILE);
+		a_conf->rotate_lock_file = zc_strdup(ZLOG_CONF_BACKUP_ROTATE_LOCK_FILE);
 	}
-	strcpy(a_conf->default_format_line, ZLOG_CONF_DEFAULT_FORMAT);
+
+	a_conf->default_format_line = zc_strdup(ZLOG_CONF_DEFAULT_FORMAT);
+
 	a_conf->file_perms = ZLOG_CONF_DEFAULT_FILE_PERMS;
 	a_conf->reload_conf_period = ZLOG_CONF_DEFAULT_RELOAD_CONF_PERIOD;
 	a_conf->fsync_period = ZLOG_CONF_DEFAULT_FSYNC_PERIOD;
@@ -141,7 +141,7 @@ zlog_conf_t *zlog_conf_new(const char *confpath)
 	if (!a_conf->levels) {
 		zc_error("zlog_level_list_new fail");
 		goto err;
-	} 
+	}
 
 	a_conf->formats = zc_arraylist_new((zc_arraylist_del_fn) zlog_format_del);
 	if (!a_conf->formats) {
@@ -386,7 +386,7 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 			/* now build rotater and default_format
 			 * from the unchanging global setting,
 			 * for zlog_rule_new() */
-			a_conf->rotater = zlog_rotater_new(a_conf->rotate_lock_file);	
+			a_conf->rotater = zlog_rotater_new(a_conf->rotate_lock_file);
 			if (!a_conf->rotater) {
 				zc_error("zlog_rotater_new fail");
 				return -1;
@@ -421,7 +421,7 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 
 		if (STRCMP(word_1, ==, "strict") && STRCMP(word_2, ==, "init")) {
 			/* if environment variable ZLOG_STRICT_INIT is set
-			 * then always make it strict 
+			 * then always make it strict
 			 */
 			if (STRICMP(value, ==, "false") && !getenv("ZLOG_STRICT_INIT")) {
 				a_conf->strict_init = 0;
@@ -437,14 +437,20 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 		} else if (STRCMP(word_1, ==, "rotate") &&
 				STRCMP(word_2, ==, "lock") && STRCMP(word_3, ==, "file")) {
 			/* may overwrite the inner default value, or last value */
+			if (a_conf->rotate_lock_file)
+				free(a_conf->rotate_lock_file);
+
 			if (STRCMP(value, ==, "self")) {
-				strcpy(a_conf->rotate_lock_file, a_conf->file);
+				a_conf->rotate_lock_file = zc_strdup(a_conf->file);
 			} else {
-				strcpy(a_conf->rotate_lock_file, value);
+				a_conf->rotate_lock_file = zc_strdup(value);
 			}
 		} else if (STRCMP(word_1, ==, "default") && STRCMP(word_2, ==, "format")) {
 			/* so the input now is [format = "xxyy"], fit format's style */
-			strcpy(a_conf->default_format_line, line + nread);
+			if (a_conf->default_format_line)
+				free(a_conf->default_format_line);
+
+			a_conf->default_format_line = zc_strdup(line + nread);
 		} else if (STRCMP(word_1, ==, "reload") &&
 				STRCMP(word_2, ==, "conf") && STRCMP(word_3, ==, "period")) {
 			a_conf->reload_conf_period = zc_parse_byte_size(value);

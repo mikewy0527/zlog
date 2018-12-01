@@ -11,6 +11,10 @@
 size_t zc_parse_byte_size(char *astring);
 int zc_str_replace_env(char *str, size_t str_size);
 
+size_t zc_strnlen(const char *s, size_t maxlen);
+char *zc_strdup(const char *s);
+char *zc_strndup(const char *s, size_t n);
+
 #define zc_max(a,b) ((a) > (b) ? (a) : (b))
 #define zc_min(a,b) ((a) < (b) ? (a) : (b))
 
