@@ -1,7 +1,9 @@
 #ifndef __zlog_fmacro_h
 #define __zlog_fmacro_h
 
-#define _DEFAULT_SOURCE
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE 1
+#endif
 
 #if defined(__linux__) || defined(__OpenBSD__) || defined(_AIX)
 #ifndef _XOPEN_SOURCE
