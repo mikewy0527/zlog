@@ -18,7 +18,7 @@ extern "C" {
 
 # if defined __GNUC__
 #   define ZLOG_CHECK_PRINTF(m,n) __attribute__((format(printf,m,n)))
-# else 
+# else
 #   define ZLOG_CHECK_PRINTF(m,n)
 # endif
 
@@ -31,6 +31,7 @@ void zlog_fini(void);
 void zlog_profile(void);
 
 zlog_category_t *zlog_get_category(const char *cname);
+int zlog_level_enabled(zlog_category_t *category, const int level);
 
 int zlog_put_mdc(const char *key, const char *value);
 char *zlog_get_mdc(const char *key);
@@ -89,7 +90,7 @@ typedef enum {
 	ZLOG_LEVEL_WARN = 80,
 	ZLOG_LEVEL_ERROR = 100,
 	ZLOG_LEVEL_FATAL = 120
-} zlog_level; 
+} zlog_level;
 
 #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
 # if defined __GNUC__ && __GNUC__ >= 2
@@ -259,6 +260,14 @@ typedef enum {
 #define hdzlog_debug(buf, buf_len) \
 	hdzlog(__FILE__, sizeof(__FILE__)-1, __func__, sizeof(__func__)-1, __LINE__, \
 	ZLOG_LEVEL_DEBUG, buf, buf_len)
+
+/* enabled macros */
+#define zlog_fatal_enabled(zc) zlog_level_enabled(zc, ZLOG_LEVEL_FATAL)
+#define zlog_error_enabled(zc) zlog_level_enabled(zc, ZLOG_LEVEL_ERROR)
+#define zlog_warn_enabled(zc) zlog_level_enabled(zc, ZLOG_LEVEL_WARN)
+#define zlog_notice_enabled(zc) zlog_level_enabled(zc, ZLOG_LEVEL_NOTICE)
+#define zlog_info_enabled(zc) zlog_level_enabled(zc, ZLOG_LEVEL_INFO)
+#define zlog_debug_enabled(zc) zlog_level_enabled(zc, ZLOG_LEVEL_DEBUG)
 
 #ifdef __cplusplus
 }

@@ -24,6 +24,7 @@
 
 /*******************************************************************************/
 extern char *zlog_git_sha1;
+
 /*******************************************************************************/
 static pthread_rwlock_t zlog_env_lock = PTHREAD_RWLOCK_INITIALIZER;
 zlog_conf_t *zlog_env_conf;
@@ -34,17 +35,18 @@ static zlog_category_t *zlog_default_category;
 static size_t zlog_env_reload_conf_count;
 static int zlog_env_is_init = 0;
 static int zlog_env_init_version = 0;
+
 /*******************************************************************************/
 /* inner no need thread-safe */
 static void zlog_fini_inner(void)
 {
 	/* pthread_key_delete(zlog_thread_key); */
 	/* never use pthread_key_delete,
-	 * it will cause other thread can't release zlog_thread_t 
+	 * it will cause other thread can't release zlog_thread_t
 	 * after one thread call pthread_key_delete
 	 * also key not init will cause a core dump
 	 */
-	
+
 	if (zlog_env_categories) zlog_category_table_del(zlog_env_categories);
 	zlog_env_categories = NULL;
 	zlog_default_category = NULL;
@@ -78,7 +80,7 @@ static int zlog_init_inner(const char *confpath)
 		}
 
 		/* if some thread do not call pthread_exit, like main thread
-		 * atexit will clean it 
+		 * atexit will clean it
 		 */
 		rc = atexit(zlog_clean_rest_thread);
 		if (rc) {
@@ -207,6 +209,7 @@ err:
 	}
 	return -1;
 }
+
 /*******************************************************************************/
 int zlog_reload(const char *confpath)
 {
@@ -296,6 +299,7 @@ quit:
 	}
 	return 0;
 }
+
 /*******************************************************************************/
 void zlog_fini(void)
 {
@@ -325,6 +329,7 @@ exit:
 	}
 	return;
 }
+
 /*******************************************************************************/
 zlog_category_t *zlog_get_category(const char *cname)
 {
@@ -413,6 +418,7 @@ err:
 	}
 	return -1;
 }
+
 /*******************************************************************************/
 #define zlog_fetch_thread(a_thread, fail_goto) do {  \
 	int rd = 0;  \
@@ -955,6 +961,7 @@ void zlog_profile(void)
 	}
 	return;
 }
+
 /*******************************************************************************/
 int zlog_set_record(const char *rname, zlog_record_fn record_output)
 {
@@ -1004,5 +1011,12 @@ int zlog_set_record(const char *rname, zlog_record_fn record_output)
 	}
 	return rc;
 }
+
+/*******************************************************************************/
+int zlog_level_enabled(zlog_category_t *category, const int level)
+{
+	return category && (zlog_category_needless_level(category, level) == 0);
+}
+
 
 const char *zlog_version(void) { return ZLOG_VERSION; }
