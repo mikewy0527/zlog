@@ -15,8 +15,8 @@
 typedef struct zlog_format_s zlog_format_t;
 
 struct zlog_format_s {
-	char name[MAXLEN_CFG_LINE + 1];	
-	char pattern[MAXLEN_CFG_LINE + 1];
+	char name[MAXLEN_CFG_NAME + 1];
+	char *pattern;
 	zc_arraylist_t *pattern_specs;
 };
 

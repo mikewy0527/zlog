@@ -9,7 +9,7 @@
 #ifndef __zc_arraylist_h
 #define __zc_arraylist_h
 
-#define ARRAY_LIST_DEFAULT_SIZE 32
+#define ARRAY_LIST_DEFAULT_SIZE 1
 
 typedef void (*zc_arraylist_del_fn) (void *data);
 typedef int (*zc_arraylist_cmp_fn) (void *data1, void *data2);

@@ -70,9 +70,9 @@ zlog_level_t *zlog_level_new(char *line)
 	zlog_level_t *a_level = NULL;
 	int i;
 	int nscan;
-	char str[MAXLEN_CFG_LINE + 1];
+	char str[MAXLEN_CFG_NAME + 1];
 	int l = 0;
-	char sl[MAXLEN_CFG_LINE + 1];
+	char sl[MAXLEN_CFG_NAME + 1];
 
 	zc_assert(line, NULL);
 

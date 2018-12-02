@@ -43,6 +43,7 @@ void zlog_format_profile(zlog_format_t * a_format, int flag)
 void zlog_format_del(zlog_format_t * a_format)
 {
 	zc_assert(a_format,);
+	if (a_format->pattern) free(a_format->pattern);
 	if (a_format->pattern_specs) {
 		zc_arraylist_del(a_format->pattern_specs);
 	}
@@ -61,6 +62,7 @@ zlog_format_t *zlog_format_new(char *line, int * time_cache_count)
 	char *p;
 	char *q;
 	zlog_spec_t *a_spec;
+	char tmp_pattern[MAXLEN_PATH + 1];
 
 	zc_assert(line, NULL);
 
@@ -101,17 +103,18 @@ zlog_format_t *zlog_format_new(char *line, int * time_cache_count)
 		goto err;
 	}
 
-	if (p_end - p_start > sizeof(a_format->pattern) - 1) {
+	if (p_end - p_start > sizeof(tmp_pattern) - 1) {
 		zc_error("pattern is too long");
 		goto err;
 	}
-	memset(a_format->pattern, 0x00, sizeof(a_format->pattern));
-	memcpy(a_format->pattern, p_start, p_end - p_start);
+	memset(tmp_pattern, 0x00, sizeof(tmp_pattern));
+	memcpy(tmp_pattern, p_start, p_end - p_start);
 
-	if (zc_str_replace_env(a_format->pattern, sizeof(a_format->pattern))) {
+	if (zc_str_replace_env(tmp_pattern, sizeof(tmp_pattern))) {
 		zc_error("zc_str_replace_env fail");
 		goto err;
 	}
+	a_format->pattern = zc_strdup(tmp_pattern);
 
 	a_format->pattern_specs =
 	    zc_arraylist_new((zc_arraylist_del_fn) zlog_spec_del);

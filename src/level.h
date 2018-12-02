@@ -13,10 +13,10 @@
 
 typedef struct zlog_level_s {
 	int int_level;
-	char str_uppercase[MAXLEN_PATH + 1];
-	char str_lowercase[MAXLEN_PATH + 1];
+	char str_uppercase[MAXLEN_CFG_NAME + 1];
+	char str_lowercase[MAXLEN_CFG_NAME + 1];
 	size_t str_len;
-       	int syslog_level;
+	int syslog_level;
 } zlog_level_t;
 
 zlog_level_t *zlog_level_new(char *line);
