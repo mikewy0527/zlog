@@ -42,7 +42,7 @@ struct zlog_rule_s {
 	unsigned int file_perms;
 	int file_open_flags;
 
-	char file_path[MAXLEN_PATH + 1];
+	char *file_path;
 	zc_arraylist_t *dynamic_specs;
 	int static_fd;
 	dev_t static_dev;
@@ -50,7 +50,7 @@ struct zlog_rule_s {
 
 	long archive_max_size;
 	int archive_max_count;
-	char archive_path[MAXLEN_PATH + 1];
+	char *archive_path;
 	zc_arraylist_t *archive_specs;
 
 	FILE *pipe_fp;
@@ -65,8 +65,8 @@ struct zlog_rule_s {
 	zlog_format_t *format;
 	zlog_rule_output_fn output;
 
-	char record_name[MAXLEN_PATH + 1];
-	char record_path[MAXLEN_PATH + 1];
+	char *record_name;
+	char *record_path;
 	zlog_record_fn record_func;
 };
 

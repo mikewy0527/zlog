@@ -28,11 +28,11 @@ struct zlog_spec_s {
 	char *str;
 	int len;
 
-	char time_fmt[MAXLEN_CFG_LINE + 1];
+	char time_fmt[MAXLEN_CFG_NAME + 1];
 	int time_cache_index;
-	char mdc_key[MAXLEN_PATH + 1];
+	char mdc_key[MAXLEN_CFG_NAME + 1];
 
-	char print_fmt[MAXLEN_CFG_LINE + 1];
+	char print_fmt[16 + 1];
 	int left_adjust;
 	size_t max_width;
 	size_t min_width;

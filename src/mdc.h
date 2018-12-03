@@ -26,8 +26,8 @@ char *zlog_mdc_get(zlog_mdc_t * a_mdc, const char *key);
 void zlog_mdc_remove(zlog_mdc_t * a_mdc, const char *key);
 
 typedef struct zlog_mdc_kv_s {
-	char key[MAXLEN_PATH + 1];
-	char value[MAXLEN_PATH + 1];
+	char key[MAXLEN_CFG_NAME + 1];
+	char value[MAXLEN_CFG_NAME + 1];
 	size_t value_len;
 } zlog_mdc_kv_t;
 

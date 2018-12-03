@@ -505,12 +505,14 @@ zlog_spec_t *zlog_spec_new(char *pattern_start, char **pattern_next, int *time_c
 		if (*p == 'd') {
 			if (*(p+1) != '(') {
 				/* without '(' , use default */
-				strcpy(a_spec->time_fmt, ZLOG_DEFAULT_TIME_FMT);
+				snprintf(a_spec->time_fmt, sizeof(a_spec->time_fmt), "%s",
+					ZLOG_DEFAULT_TIME_FMT);
 				p++;
 			} else if (STRNCMP(p, ==, "d()", 3)) {
 				/* with () but without detail time format,
 				 * keep a_spec->time_fmt=="" */
-				strcpy(a_spec->time_fmt, ZLOG_DEFAULT_TIME_FMT);
+				snprintf(a_spec->time_fmt, sizeof(a_spec->time_fmt), "%s",
+					ZLOG_DEFAULT_TIME_FMT);
 				p += 3;
 			} else {
 				nread = 0;

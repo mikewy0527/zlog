@@ -508,14 +508,14 @@ static int syslog_facility_atoi(char *facility)
 }
 
 static int zlog_rule_parse_path(char *path_start, /* start with a " */
-		char *path_str, size_t path_size, zc_arraylist_t **path_specs,
+		size_t path_size, char **path_str, zc_arraylist_t **path_specs,
 		int *time_cache_count)
 {
 	char *p, *q;
-	size_t len;
 	zlog_spec_t *a_spec;
 	zc_arraylist_t *specs;
 
+	/* skip '"' */
 	p = path_start + 1;
 
 	q = strrchr(p, '"');
@@ -523,20 +523,16 @@ static int zlog_rule_parse_path(char *path_start, /* start with a " */
 		zc_error("matching \" not found in conf line[%s]", path_start);
 		return -1;
 	}
-	len = q - p;
-	if (len > path_size - 1) {
-		zc_error("file_path too long %ld > %ld", len, path_size - 1);
-		return -1;
-	}
-	memcpy(path_str, p, len);
+	*q = '\0';
 
 	/* replace any environment variables like %E(HOME) */
-	if (zc_str_replace_env(path_str, path_size)) {
+	if (zc_str_replace_env(p, path_size - 1)) {
 		zc_error("zc_str_replace_env fail");
 		return -1;
 	}
+	*path_str = zc_strdup(p);
 
-	if (strchr(path_str, '%') == NULL) {
+	if (strchr(*path_str, '%') == NULL) {
 		/* static, no need create specs */
 		return 0;
 	}
@@ -547,7 +543,7 @@ static int zlog_rule_parse_path(char *path_start, /* start with a " */
 		return -1;
 	}
 
-	for (p = path_str; *p != '\0'; p = q) {
+	for (p = *path_str; *p != '\0'; p = q) {
 		a_spec = zlog_spec_new(p, &q, time_cache_count);
 		if (!a_spec) {
 			zc_error("zlog_spec_new fail");
@@ -563,6 +559,10 @@ static int zlog_rule_parse_path(char *path_start, /* start with a " */
 	*path_specs = specs;
 	return 0;
 err:
+	if (*path_str) {
+		free(*path_str);
+		*path_str = NULL;
+	}
 	if (specs) zc_arraylist_del(specs);
 	if (a_spec) zlog_spec_del(a_spec);
 	return -1;
@@ -592,8 +592,6 @@ zlog_rule_t *zlog_rule_new(char *line,
 	char *file_limit;
 
 	char *p;
-	char *q;
-	size_t len;
 
 	zc_assert(line, NULL);
 	zc_assert(default_format, NULL);
@@ -768,7 +766,7 @@ zlog_rule_t *zlog_rule_new(char *line,
 	case '"' :
 		if (!p) p = file_path;
 
-		rc = zlog_rule_parse_path(p, a_rule->file_path, sizeof(a_rule->file_path),
+		rc = zlog_rule_parse_path(p, sizeof(file_path), &(a_rule->file_path),
 				&(a_rule->dynamic_specs), time_cache_count);
 		if (rc) {
 			zc_error("zlog_rule_parse_path fail");
@@ -784,8 +782,10 @@ zlog_rule_t *zlog_rule_new(char *line,
 			}
 			p = strchr(file_limit, '"');
 			if (p) { /* archive file path exist */
-				rc = zlog_rule_parse_path(p,
-					a_rule->archive_path, sizeof(a_rule->file_path),
+				memset(file_path, 0x00, sizeof(file_path));
+				memcpy(file_path, p, strlen(p) + 1);
+				rc = zlog_rule_parse_path(file_path, sizeof(file_path),
+					&(a_rule->archive_path),
 					&(a_rule->archive_specs), time_cache_count);
 				if (rc) {
 					zc_error("zlog_rule_parse_path fail");
@@ -867,7 +867,7 @@ zlog_rule_t *zlog_rule_new(char *line,
 		}
 		break;
 	case '$' :
-		sscanf(file_path + 1, "%s", a_rule->record_name);
+		a_rule->record_name = zc_strdup(file_path + 1);
 
 		if (file_limit) {  /* record path exists */
 			p = strchr(file_limit, '"');
@@ -875,55 +875,22 @@ zlog_rule_t *zlog_rule_new(char *line,
 				zc_error("record_path not start with \", [%s]", file_limit);
 				goto err;
 			}
-			p++; /* skip 1st " */
-
-			q = strrchr(p, '"');
-			if (!q) {
-				zc_error("matching \" not found in conf line[%s]", p);
+			memset(file_path, 0x00, sizeof(file_path));
+			memcpy(file_path, p, strlen(p) + 1);
+			rc = zlog_rule_parse_path(file_path, sizeof(file_path),
+				&(a_rule->record_path),
+				&(a_rule->dynamic_specs), time_cache_count);
+			if (rc) {
+				zc_error("zlog_rule_parse_path fail");
 				goto err;
 			}
-			len = q - p;
-			if (len > sizeof(a_rule->record_path) - 1) {
-				zc_error("record_path too long %ld > %ld", len, sizeof(a_rule->record_path) - 1);
-				goto err;
-			}
-			memcpy(a_rule->record_path, p, len);
-		}
-
-		/* replace any environment variables like %E(HOME) */
-		rc = zc_str_replace_env(a_rule->record_path, sizeof(a_rule->record_path));
-		if (rc) {
-			zc_error("zc_str_replace_env fail");
-			goto err;
 		}
 
 		/* try to figure out if the log file path is dynamic or static */
-		if (strchr(a_rule->record_path, '%') == NULL) {
+		if (a_rule->dynamic_specs == NULL) {
 			a_rule->output = zlog_rule_output_static_record;
 		} else {
-			zlog_spec_t *a_spec;
-
 			a_rule->output = zlog_rule_output_dynamic_record;
-
-			a_rule->dynamic_specs = zc_arraylist_new((zc_arraylist_del_fn)zlog_spec_del);
-			if (!(a_rule->dynamic_specs)) {
-				zc_error("zc_arraylist_new fail");
-				goto err;
-			}
-			for (p = a_rule->record_path; *p != '\0'; p = q) {
-				a_spec = zlog_spec_new(p, &q, time_cache_count);
-				if (!a_spec) {
-					zc_error("zlog_spec_new fail");
-					goto err;
-				}
-
-				rc = zc_arraylist_add(a_rule->dynamic_specs, a_spec);
-				if (rc) {
-					zlog_spec_del(a_spec);
-					zc_error("zc_arraylist_add fail");
-					goto err;
-				}
-			}
 		}
 		break;
 	default :
@@ -942,24 +909,46 @@ err:
 void zlog_rule_del(zlog_rule_t * a_rule)
 {
 	zc_assert(a_rule,);
+	if (a_rule->file_path){
+		free(a_rule->file_path);
+		a_rule->file_path = NULL;
+	}
 	if (a_rule->dynamic_specs) {
 		zc_arraylist_del(a_rule->dynamic_specs);
 		a_rule->dynamic_specs = NULL;
 	}
+
 	if (a_rule->static_fd) {
 		if (close(a_rule->static_fd)) {
 			zc_error("close fail, maybe cause by write, errno[%d]", errno);
 		}
 	}
+
 	if (a_rule->pipe_fp) {
 		if (pclose(a_rule->pipe_fp) == -1) {
 			zc_error("pclose fail, errno[%d]", errno);
 		}
 	}
+
+	if (a_rule->archive_path) {
+		free(a_rule->archive_path);
+		a_rule->archive_path = NULL;
+	}
 	if (a_rule->archive_specs) {
 		zc_arraylist_del(a_rule->archive_specs);
 		a_rule->archive_specs = NULL;
 	}
+
+	if (a_rule->record_name) {
+		free(a_rule->record_name);
+		a_rule->record_name = NULL;
+	}
+
+	if (a_rule->record_path) {
+		free(a_rule->record_path);
+		a_rule->record_path = NULL;
+	}
+
 	free(a_rule);
 	zc_debug("zlog_rule_del[%p]", a_rule);
 	return;
