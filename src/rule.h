@@ -28,12 +28,12 @@ typedef struct zlog_rule_s zlog_rule_t;
 typedef int (*zlog_rule_output_fn) (zlog_rule_t * a_rule, zlog_thread_t * a_thread);
 
 struct zlog_rule_s {
-	char category[MAXLEN_CFG_LINE + 1];
+	char category[MAXLEN_CFG_NAME + 1];
 	char compare_char;
-	/* 
+	/*
 	 * [*] log all level
 	 * [.] log level >= rule level, default
-	 * [=] log level == rule level 
+	 * [=] log level == rule level
 	 * [!] log level != rule level
 	 */
 	int level;

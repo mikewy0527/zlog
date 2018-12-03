@@ -168,7 +168,7 @@ static int zlog_rule_output_static_file_rotate(zlog_rule_t * a_rule, zlog_thread
 		return -1;
 	}
 
-	fd = open(a_rule->file_path, 
+	fd = open(a_rule->file_path,
 		a_rule->file_open_flags | O_WRONLY | O_APPEND | O_CREAT, a_rule->file_perms);
 	if (fd < 0) {
 		zc_error("open file[%s] fail, errno[%d]", a_rule->file_path, errno);
@@ -213,7 +213,7 @@ static int zlog_rule_output_static_file_rotate(zlog_rule_t * a_rule, zlog_thread
 	/* file not so big, return */
 	if (info.st_size + len < a_rule->archive_max_size) return 0;
 
-	if (zlog_rotater_rotate(zlog_env_conf->rotater, 
+	if (zlog_rotater_rotate(zlog_env_conf->rotater,
 		a_rule->file_path, len,
 		zlog_rule_gen_archive_path(a_rule, a_thread),
 		a_rule->archive_max_size, a_rule->archive_max_count)
@@ -334,7 +334,7 @@ static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_threa
 	/* file not so big, return */
 	if (info.st_size + len < a_rule->archive_max_size) return 0;
 
-	if (zlog_rotater_rotate(zlog_env_conf->rotater, 
+	if (zlog_rotater_rotate(zlog_env_conf->rotater,
 		path, len,
 		zlog_rule_gen_archive_path(a_rule, a_thread),
 		a_rule->archive_max_size, a_rule->archive_max_count)
@@ -581,15 +581,14 @@ zlog_rule_t *zlog_rule_new(char *line,
 	int nread = 0;
 	zlog_rule_t *a_rule;
 
-	char selector[MAXLEN_CFG_LINE + 1];
-	char category[MAXLEN_CFG_LINE + 1];
-	char level[MAXLEN_CFG_LINE + 1];
+	char selector[MAXLEN_CFG_NAME * 2 + 1];
+	char level[MAXLEN_CFG_NAME + 1];
 
 	char *action;
-	char output[MAXLEN_CFG_LINE + 1];
-	char format_name[MAXLEN_CFG_LINE + 1];
-	char file_path[MAXLEN_CFG_LINE + 1];
-	char archive_max_size[MAXLEN_CFG_LINE + 1];
+	char *output;
+	char format_name[MAXLEN_CFG_NAME + 1];
+	char file_path[MAXLEN_PATH + 1];
+	char archive_max_size[MAXLEN_CFG_NAME + 1];
 	char *file_limit;
 
 	char *p;
@@ -626,9 +625,8 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 * category     [f]
 	 * level        [.INFO]
 	 */
-	memset(category, 0x00, sizeof(category));
 	memset(level, 0x00, sizeof(level));
-	nscan = sscanf(selector, " %[^.].%s", category, level);
+	nscan = sscanf(selector, " %[^.].%s", a_rule->category, level);
 	if (nscan != 2) {
 		zc_error("sscanf [%s] fail, category or level is null",
 			 selector);
@@ -636,15 +634,12 @@ zlog_rule_t *zlog_rule_new(char *line,
 	}
 
 	/* check and set category */
-	for (p = category; *p != '\0'; p++) {
+	for (p = a_rule->category; *p != '\0'; p++) {
 		if ((!isalnum(*p)) && (*p != '_') && (*p != '-') && (*p != '*') && (*p != '!')) {
-			zc_error("category name[%s] character is not in [a-Z][0-9][_!*-]", category);
+			zc_error("category name[%s] character is not in [a-Z][0-9][_!*-]", a_rule->category);
 			goto err;
 		}
 	}
-
-	/* as one line can't be longer than MAXLEN_CFG_LINE, same as category */
-	strcpy(a_rule->category, category);
 
 	/* check and set level */
 	switch (level[0]) {
@@ -672,7 +667,7 @@ zlog_rule_t *zlog_rule_new(char *line,
 
 	a_rule->level = zlog_level_list_atoi(levels, p);
 
-	/* level_bit is a bitmap represents which level can be output 
+	/* level_bit is a bitmap represents which level can be output
 	 * 32bytes, [0-255] levels, see level.c
 	 * which bit field is 1 means allow output and 0 not
 	 */
@@ -700,13 +695,18 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 * output               ["%H/log/aa.log", 20MB * 12]
 	 * format               [MyTemplate]
 	 */
-	memset(output, 0x00, sizeof(output));
+	nread = 0;
 	memset(format_name, 0x00, sizeof(format_name));
-	nscan = sscanf(action, " %[^;];%s", output, format_name);
-	if (nscan < 1) {
-		zc_error("sscanf [%s] fail", action);
-		goto err;
+	p = strrchr(action, ';');
+	if (p) {
+		nscan = sscanf(action, " %*[^;];%n%s", &nread, format_name);
+		if (nread == 0) {
+			zc_error("sscanf [%s] fail", action);
+			goto err;
+		}
+		action[nread - 1] = '\0';
 	}
+	output = action;
 
 	/* check and get format */
 	if (STRCMP(format_name, ==, "")) {
@@ -868,7 +868,7 @@ zlog_rule_t *zlog_rule_new(char *line,
 		break;
 	case '$' :
 		sscanf(file_path + 1, "%s", a_rule->record_name);
-			
+
 		if (file_limit) {  /* record path exists */
 			p = strchr(file_limit, '"');
 			if (!p) {
@@ -1002,7 +1002,7 @@ int zlog_rule_output(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
 int zlog_rule_is_wastebin(zlog_rule_t * a_rule)
 {
 	zc_assert(a_rule, -1);
-	
+
 	if (STRCMP(a_rule->category, ==, "!")) {
 		return 1;
 	}
@@ -1047,7 +1047,7 @@ int zlog_rule_set_record(zlog_rule_t * a_rule, zc_hashtable_t *records)
 {
 	zlog_record_t *a_record;
 
-	if (a_rule->output != zlog_rule_output_static_record 
+	if (a_rule->output != zlog_rule_output_static_record
 	&&  a_rule->output != zlog_rule_output_dynamic_record) {
 		return 0; /* fliter, may go through not record rule */
 	}

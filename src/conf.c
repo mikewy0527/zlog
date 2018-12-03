@@ -222,7 +222,7 @@ static int zlog_conf_build_with_file(zlog_conf_t * a_conf)
 	struct tm local_time;
 	FILE *fp = NULL;
 
-	char line[MAXLEN_CFG_LINE + 1];
+	char *line = NULL;
 	size_t line_len;
 	char *pline = NULL;
 	char *p = NULL;
@@ -246,11 +246,17 @@ static int zlog_conf_build_with_file(zlog_conf_t * a_conf)
 		return -1;
 	}
 
+	line = malloc((MAXLEN_CFG_LINE + 1) * sizeof(char));
+	if (!line) {
+		zc_error("malloc failed, errno[%d]", errno);
+		goto exit;
+	}
+
 	/* Now process the file.
 	 */
 	pline = line;
-	memset(&line, 0x00, sizeof(line));
-	while (fgets((char *)pline, sizeof(line) - (pline - line), fp) != NULL) {
+	memset(line, 0x00, MAXLEN_CFG_LINE + 1);
+	while (fgets(pline, (MAXLEN_CFG_LINE + 1) - (pline - line), fp) != NULL) {
 		++line_no;
 		line_len = strlen(pline);
 		if (pline[line_len - 1] == '\n') {
@@ -324,6 +330,7 @@ static int zlog_conf_build_with_file(zlog_conf_t * a_conf)
 	}
 
 exit:
+	if (line) free(line);
 	fclose(fp);
 	return rc;
 }
@@ -333,19 +340,13 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 {
 	int nscan;
 	int nread;
-	char name[MAXLEN_CFG_LINE + 1];
-	char word_1[MAXLEN_CFG_LINE + 1];
-	char word_2[MAXLEN_CFG_LINE + 1];
-	char word_3[MAXLEN_CFG_LINE + 1];
-	char value[MAXLEN_CFG_LINE + 1];
+	char name[MAXLEN_CFG_NAME * 4 + 1];
+	char word_1[MAXLEN_CFG_NAME + 1];
+	char word_2[MAXLEN_CFG_NAME + 1];
+	char word_3[MAXLEN_CFG_NAME + 1];
+	char value[MAXLEN_PATH + 1];
 	zlog_format_t *a_format = NULL;
 	zlog_rule_t *a_rule = NULL;
-
-	if (strlen(line) > MAXLEN_CFG_LINE) {
-		zc_error ("line_len[%ld] > MAXLEN_CFG_LINE[%ld], may cause overflow",
-		     strlen(line), MAXLEN_CFG_LINE);
-		return -1;
-	}
 
 	/* get and set outer section flag, so it is a closure? haha */
 	if (line[0] == '[') {
