@@ -86,7 +86,7 @@ int zlog_level_list_set(zc_arraylist_t *levels, char *line)
 		return -1;
 	}
 
-	if (zc_arraylist_set(levels, a_level->int_level, a_level)) {
+	if (zc_arraylist_set(levels, levels->len, a_level)) {
 		zc_error("zc_arraylist_set fail");
 		goto err;
 	}
@@ -100,7 +100,9 @@ err:
 
 zlog_level_t *zlog_level_list_get(zc_arraylist_t *levels, int l)
 {
+	int i;
 	zlog_level_t *a_level;
+	zlog_level_t *unkown_level = NULL;
 
 #if 0
 	if ((l <= 0) || (l > 254)) {
@@ -110,15 +112,24 @@ zlog_level_t *zlog_level_list_get(zc_arraylist_t *levels, int l)
 	}
 #endif
 
-	a_level = zc_arraylist_get(levels, l);
-	if (a_level) {
-		return a_level;
-	} else {
+	zc_arraylist_foreach(levels, i, a_level) {
+		if (a_level->int_level == l) {
+			break;
+		}
+
+		if (a_level->int_level == 254) {
+			unkown_level = a_level;
+		}
+	}
+
+	if (i >= levels->len) {
 		/* empty slot */
 		zc_error("l[%d] not in (0,254), or has no level defined,"
 			"see configure file define, set to UNKOWN", l);
-		return zc_arraylist_get(levels, 254);
+		a_level = unkown_level;
 	}
+
+	return a_level;
 }
 
 /*******************************************************************************/
