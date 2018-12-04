@@ -25,8 +25,7 @@ void zlog_level_list_profile(zc_arraylist_t *levels, int flag)
 	zc_assert(levels,);
 	zc_profile(flag, "--level_list[%p]--", levels);
 	zc_arraylist_foreach(levels, i, a_level) {
-		/* skip empty slots */
-		if (a_level) zlog_level_profile(a_level, flag);
+		zlog_level_profile(a_level, flag);
 	}
 	return;
 }
@@ -104,14 +103,6 @@ zlog_level_t *zlog_level_list_get(zc_arraylist_t *levels, int l)
 	zlog_level_t *a_level;
 	zlog_level_t *unkown_level = NULL;
 
-#if 0
-	if ((l <= 0) || (l > 254)) {
-		/* illegal input from zlog() */
-		zc_error("l[%d] not in (0,254), set to UNKOWN", l);
-		l = 254;
-	}
-#endif
-
 	zc_arraylist_foreach(levels, i, a_level) {
 		if (a_level->int_level == l) {
 			break;
@@ -123,7 +114,6 @@ zlog_level_t *zlog_level_list_get(zc_arraylist_t *levels, int l)
 	}
 
 	if (i >= levels->len) {
-		/* empty slot */
 		zc_error("l[%d] not in (0,254), or has no level defined,"
 			"see configure file define, set to UNKOWN", l);
 		a_level = unkown_level;
@@ -145,7 +135,7 @@ int zlog_level_list_atoi(zc_arraylist_t *levels, char *str)
 	}
 
 	zc_arraylist_foreach(levels, i, a_level) {
-		if (a_level && STRICMP(str, ==, a_level->str_uppercase)) {
+		if (STRICMP(str, ==, a_level->str_uppercase)) {
 			return i;
 		}
 	}
