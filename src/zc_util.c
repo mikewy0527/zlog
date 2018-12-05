@@ -80,9 +80,9 @@ int zc_str_replace_env(char *str, size_t str_size)
 {
 	char *p;
 	char *q;
-	char fmt[MAXLEN_CFG_LINE + 1];
-	char env_key[MAXLEN_CFG_LINE + 1];
-	char env_value[MAXLEN_CFG_LINE + 1];
+	char fmt[MAXLEN_CFG_NAME + 1];
+	char env_key[MAXLEN_CFG_NAME + 1];
+	char env_value[MAXLEN_CFG_NAME * 2 + 1];
 	int str_len;
 	int env_value_len;
 	int nscan;
@@ -108,7 +108,7 @@ int zc_str_replace_env(char *str, size_t str_size)
 			fmt[nread + 1] = 's';
 		} else {
 			nread = 0;
-			strcpy(fmt, "%s");
+			snprintf(fmt, sizeof(fmt), "%s", "%s");
 		}
 
 		q = p + 1 + nread;

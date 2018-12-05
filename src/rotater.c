@@ -26,7 +26,7 @@
 
 typedef struct {
 	int index;
-	char path[MAXLEN_PATH + 1];
+	char *path;
 } zlog_file_t;
 
 void zlog_rotater_profile(zlog_rotater_t * a_rotater, int flag)
@@ -124,13 +124,15 @@ err:
 static void zlog_file_del(zlog_file_t * a_file)
 {
 	zc_debug("del onefile[%p]", a_file);
-	zc_debug("a_file->path[%s]", a_file->path);
+	if (a_file->path) {
+		zc_debug("a_file->path[%s]", a_file->path);
+		free(a_file->path);
+	}
 	free(a_file);
 }
 
 static zlog_file_t *zlog_file_check_new(zlog_rotater_t * a_rotater, const char *path)
 {
-	int nwrite;
 	int nread;
 	zlog_file_t *a_file;
 
@@ -150,11 +152,12 @@ static zlog_file_t *zlog_file_check_new(zlog_rotater_t * a_rotater, const char *
 		return NULL;
 	}
 
-	nwrite = snprintf(a_file->path, sizeof(a_file->path), "%s", path);
-	if (nwrite < 0 || nwrite >= sizeof(a_file->path)) {
-		zc_error("snprintf fail or overflow, nwrite=[%d], errno[%d]", nwrite, errno);
+	a_file->path = malloc(strlen(path) + 1);
+	if (!a_file->path) {
+		zc_error("calloc fail, errno[%d]", errno);
 		goto err;
 	}
+	a_file->path = zc_strdup(path);
 
 	nread = 0;
 	sscanf(a_file->path + a_rotater->num_start_len, "%d%n", &(a_file->index), &(nread));
@@ -168,7 +171,7 @@ static zlog_file_t *zlog_file_check_new(zlog_rotater_t * a_rotater, const char *
 
 	return a_file;
 err:
-	free(a_file);
+	zlog_file_del(a_file);
 	return NULL;
 }
 
@@ -238,7 +241,7 @@ static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater)
 	char new_path[MAXLEN_PATH + 1];
 
 	zc_arraylist_foreach(a_rotater->files, i, a_file) {
-		if (a_rotater->max_count > 0 
+		if (a_rotater->max_count > 0
 			&& i < zc_arraylist_len(a_rotater->files) - a_rotater->max_count) {
 			/* unlink aa.0 aa.1 .. aa.(n-c) */
 			rc = unlink(a_file->path);
@@ -265,7 +268,7 @@ static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater)
 	/* do the base_path mv  */
 	memset(new_path, 0x00, sizeof(new_path));
 	nwrite = snprintf(new_path, sizeof(new_path), "%.*s%0*d%s",
-		(int) a_rotater->num_start_len, a_rotater->glob_path, 
+		(int) a_rotater->num_start_len, a_rotater->glob_path,
 		a_rotater->num_width, j,
 		a_rotater->glob_path + a_rotater->num_end_len);
 	if (nwrite < 0 || nwrite >= sizeof(new_path)) {
@@ -311,7 +314,7 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
 		/* begin rename aa.01.log -> aa.02.log , using i, as index in list maybe repeat */
 		memset(new_path, 0x00, sizeof(new_path));
 		nwrite = snprintf(new_path, sizeof(new_path), "%.*s%0*d%s",
-			(int) a_rotater->num_start_len, a_rotater->glob_path, 
+			(int) a_rotater->num_start_len, a_rotater->glob_path,
 			a_rotater->num_width, i + 1,
 			a_rotater->glob_path + a_rotater->num_end_len);
 		if (nwrite < 0 || nwrite >= sizeof(new_path)) {
@@ -328,7 +331,7 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
 	/* do the base_path mv  */
 	memset(new_path, 0x00, sizeof(new_path));
 	nwrite = snprintf(new_path, sizeof(new_path), "%.*s%0*d%s",
-		(int) a_rotater->num_start_len, a_rotater->glob_path, 
+		(int) a_rotater->num_start_len, a_rotater->glob_path,
 		a_rotater->num_width, 0,
 		a_rotater->glob_path + a_rotater->num_end_len);
 	if (nwrite < 0 || nwrite >= sizeof(new_path)) {
@@ -347,27 +350,29 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
 
 static int zlog_rotater_parse_archive_path(zlog_rotater_t * a_rotater)
 {
-	int nwrite;
 	int nread;
 	char *p;
 	size_t len;
+	size_t base_len;
+
+	zc_assert(a_rotater->archive_path, -1);
 
 	/* no archive path is set */
 	if (a_rotater->archive_path[0] == '\0') {
-		nwrite = snprintf(a_rotater->glob_path, sizeof(a_rotater->glob_path),
-					"%s.*", a_rotater->base_path);
-		if (nwrite < 0 || nwrite > sizeof(a_rotater->glob_path)) {
-			zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+		base_len = strlen(a_rotater->base_path);
+		len = base_len + 2 + 1;
+		a_rotater->glob_path = malloc(len);
+		if (!a_rotater->glob_path) {
+			zc_error("malloc failed, errno[%d]", errno);
 			return -1;
 		}
+		snprintf(a_rotater->glob_path, len, "%s.*", a_rotater->base_path);
 
 		a_rotater->mv_type = ROLLING;
 		a_rotater->num_width = 0;
-		a_rotater->num_start_len = strlen(a_rotater->base_path) + 1;
-		a_rotater->num_end_len = strlen(a_rotater->base_path) + 2;
-		return 0;
+		a_rotater->num_start_len = base_len + 1;
+		a_rotater->num_end_len = base_len + 2;
 	} else {
-
 		/* find the 1st # */
 		p = strchr(a_rotater->archive_path, '#');
 		if (!p) {
@@ -388,24 +393,21 @@ static int zlog_rotater_parse_archive_path(zlog_rotater_t * a_rotater)
 		}
 
 		/* copy and substitue #i to * in glob_path*/
-		len = p - a_rotater->archive_path;
-		if (len > sizeof(a_rotater->glob_path) - 1) {
-			zc_error("sizeof glob_path not enough,len[%ld]", (long) len);
+		base_len = p - a_rotater->archive_path;
+		len = base_len + 1 + strlen(p + nread + 1) + 1;
+		a_rotater->glob_path = malloc(len);
+		if (!a_rotater->glob_path) {
+			zc_error("malloc failed, errno[%d]", errno);
 			return -1;
 		}
-		memcpy(a_rotater->glob_path, a_rotater->archive_path, len);
-
-		nwrite = snprintf(a_rotater->glob_path + len, sizeof(a_rotater->glob_path) - len,
+		memcpy(a_rotater->glob_path, a_rotater->archive_path, base_len);
+		snprintf(a_rotater->glob_path + base_len, len - base_len,
 				"*%s", p + nread + 1);
-		if (nwrite < 0 || nwrite > sizeof(a_rotater->glob_path) - len) {
-			zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
-			return -1;
-		}
 
-		a_rotater->num_start_len = len;
-		a_rotater->num_end_len = len + 1;
+		a_rotater->num_start_len = base_len;
+		a_rotater->num_end_len = base_len + 1;
 	}
-	
+
 	return 0;
 }
 
@@ -418,13 +420,15 @@ static void zlog_rotater_clean(zlog_rotater_t *a_rotater)
 	a_rotater->num_width = 0;
 	a_rotater->num_start_len = 0;
 	a_rotater->num_end_len = 0;
-	memset(a_rotater->glob_path, 0x00, sizeof(a_rotater->glob_path));
+
+	if (a_rotater->glob_path) free(a_rotater->glob_path);
+	a_rotater->glob_path = NULL;
 
 	if (a_rotater->files) zc_arraylist_del(a_rotater->files);
 	a_rotater->files = NULL;
 }
 
-static int zlog_rotater_lsmv(zlog_rotater_t *a_rotater, 
+static int zlog_rotater_lsmv(zlog_rotater_t *a_rotater,
 		char *base_path, char *archive_path, int archive_max_count)
 {
 	int rc = 0;

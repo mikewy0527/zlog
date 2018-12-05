@@ -452,6 +452,7 @@ static int zlog_spec_parse_print_fmt(zlog_spec_t * a_spec)
 void zlog_spec_del(zlog_spec_t * a_spec)
 {
 	zc_assert(a_spec,);
+	a_spec->str = NULL;
 	free(a_spec);
 	zc_debug("zlog_spec_del[%p]", a_spec);
 }

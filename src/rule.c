@@ -523,6 +523,11 @@ static int zlog_rule_parse_path(char *path_start, /* start with a " */
 		zc_error("matching \" not found in conf line[%s]", path_start);
 		return -1;
 	}
+
+	if (q - p == 0) {
+		zc_error("path is empty in conf line[%s]", path_start);
+		return -1;
+	}
 	*q = '\0';
 
 	/* replace any environment variables like %E(HOME) */
@@ -793,8 +798,14 @@ zlog_rule_t *zlog_rule_new(char *line,
 				}
 
 				p = strchr(a_rule->archive_path, '#');
-				if ( (p == NULL) || ((strchr(p, 'r') == NULL) && (strchr(p, 's') == NULL))) {
+				if ( (p == NULL) ||
+					((strchr(p, 'r') == NULL) && (strchr(p, 's') == NULL))) {
 					zc_error("archive_path must contain #r or #s");
+					goto err;
+				}
+
+				if (strlen(a_rule->archive_path) <= 2) {
+					zc_error("archive_path is not a valid path");
 					goto err;
 				}
 			}
@@ -827,7 +838,8 @@ zlog_rule_t *zlog_rule_new(char *line,
 
 			/* save off the inode information for checking for a changed file later on */
 			if (fstat(a_rule->static_fd, &stb)) {
-				zc_error("stat [%s] fail, errno[%d], failing to open static_fd", a_rule->file_path, errno);
+				zc_error("stat [%s] fail, errno[%d], failing to open static_fd",
+					a_rule->file_path, errno);
 				goto err;
 			}
 			a_rule->static_dev = stb.st_dev;
@@ -887,10 +899,10 @@ zlog_rule_t *zlog_rule_new(char *line,
 		}
 
 		/* try to figure out if the log file path is dynamic or static */
-		if (a_rule->dynamic_specs == NULL) {
-			a_rule->output = zlog_rule_output_static_record;
-		} else {
+		if (a_rule->dynamic_specs) {
 			a_rule->output = zlog_rule_output_dynamic_record;
+		} else {
+			a_rule->output = zlog_rule_output_static_record;
 		}
 		break;
 	default :
