@@ -34,26 +34,74 @@ struct thread_info {    /* Used as argument to thread_start() */
 
 struct thread_info *tinfo;
 
+volatile sig_atomic_t need_to_exit = 0;
 
-void intercept(int sig)
-{
-	int i;
+#if defined(HAVE_SIGACTION) && defined(SA_SIGINFO)
+static volatile siginfo_t last_sigterm_info;
 
-    printf("\nIntercept signal %d\n\n", sig);
-
-    signal (sig, SIG_DFL);
-    raise (sig);
-
-	printf("You can import datas below in a spreadsheat and check if any thread stopped increment the Loop counter during the test.\n\n");
-	printf("Thread;Loop\n");
-	for (i=0; i<NB_THREADS; i++)
-	{
-		printf("%d;%lld\n", tinfo[i].thread_num, tinfo[i].loop);
+static void sigaction_handler(int sig, siginfo_t *si, void *context) {
+    UNUSED(context);
+    switch (sig) {
+    case SIGINT:
+    case SIGTERM:
+        need_to_exit = 1;
+        last_sigterm_info = *si;
+        break;
+    case SIGHUP:
+        break;
+    case SIGCHLD:
+        break;
     }
+}
+#else
+static void signal_handler(int sig) {
+    switch (sig) {
+    case SIGTERM:
+    case SIGINT:
+        need_to_exit = 1;
+        break;
+    case SIGHUP:
+        break;
+    case SIGCHLD:
+        break;
+    }
+}
+#endif
 
-    free(tinfo);
+void reg_sighandler()
+{
+#ifdef HAVE_SIGACTION
+    struct sigaction act;
+#endif
 
-    zlog_fini();
+#ifdef HAVE_SIGACTION
+    memset(&act, 0, sizeof(act));
+    act.sa_handler = SIG_IGN;
+    sigaction(SIGPIPE, &act, NULL);
+    sigaction(SIGUSR1, &act, NULL);
+#if defined(SA_SIGINFO)
+    act.sa_sigaction = sigaction_handler;
+    act.sa_handler = 0;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = SA_SIGINFO;
+#else
+    act.sa_handler = signal_handler;
+    act.sa_sigaction = 0;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+#endif
+    sigaction(SIGINT,  &act, NULL);
+    sigaction(SIGTERM, &act, NULL);
+    sigaction(SIGHUP,  &act, NULL);
+    sigaction(SIGCHLD, &act, NULL);
+#else
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGUSR1, SIG_IGN);
+    signal(SIGINT,  signal_handler);
+    signal(SIGTERM, signal_handler);
+    signal(SIGHUP,  signal_handler);
+    signal(SIGCHLD, signal_handler);
+#endif
 }
 
 void *myThread(void *arg)
@@ -68,6 +116,11 @@ void *myThread(void *arg)
 	{
 		while(1)
 		{
+            if (need_to_exit) {
+                zlog_info(tinfo->zc, "Thread[%d] recv 'Ctrl-C', need to exit", tinfo->thread_num);
+                break;
+            }
+
 			usleep(THREAD_LOOP_DELAY);
 			zlog_info(tinfo->zc, "%d;%lld", tinfo->thread_num, tinfo->loop++);
 		}
@@ -105,13 +158,7 @@ int main(int argc, char** argv)
 		return -3;
 	}
 
-	/* Interrupt (ANSI).		<Ctrl-C> */
-	if (signal(SIGINT, intercept) == SIG_IGN )
-	{
-		zlog_fatal(zc, "Can't caught the signal SIGINT, Interrupt (ANSI)");
-		signal(SIGINT, SIG_IGN );
-		return -4;
-	}
+    reg_sighandler();
 
 	// start threads
     tinfo = calloc(NB_THREADS, sizeof(struct thread_info));
@@ -123,7 +170,7 @@ int main(int argc, char** argv)
 		{
 			zlog_fatal(zc, "Unable to start thread %d", i);
 			zlog_fini();
-			return(-5);
+            goto err;
 		}
     }
 
@@ -139,6 +186,11 @@ int main(int argc, char** argv)
 	while(1)
 	{
 		int reload;
+
+        if (need_to_exit) {
+            zlog_info(zc, "Recv 'Ctrl-C', need to exit");
+            break;
+        }
 
 		sleep(1);
 		i++;
@@ -161,12 +213,21 @@ int main(int argc, char** argv)
 			rc = zlog_reload(CONFIG);
 			if (rc) {
 				printf("main init failed\n");
-				return -6;
+                goto err;
 			}
 			zlog_info(zc, "Configuration reloaded :)");
 			stat(CONFIG, &stat_0);
 		}
 	}
+
+err:
+    if (tinfo) {
+        for (i=0; i<NB_THREADS; i++) {
+            pthread_join(tinfo[i].thread_id, NULL);
+        }
+        free(tinfo);
+    }
+    zlog_fini();
 	
     exit(EXIT_SUCCESS);
 }
