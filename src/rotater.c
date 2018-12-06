@@ -26,7 +26,6 @@
 
 typedef struct {
 	int index;
-	char *path;
 } zlog_file_t;
 
 void zlog_rotater_profile(zlog_rotater_t * a_rotater, int flag)
@@ -52,7 +51,7 @@ void zlog_rotater_profile(zlog_rotater_t * a_rotater, int flag)
 		int i;
 		zlog_file_t *a_file;
 		zc_arraylist_foreach(a_rotater->files, i, a_file) {
-			zc_profile(flag, "[%s,%d]->", a_file->path, a_file->index);
+			zc_profile(flag, "[%d]->", a_file->index);
 		}
 	}
 	return;
@@ -124,10 +123,7 @@ err:
 static void zlog_file_del(zlog_file_t * a_file)
 {
 	zc_debug("del onefile[%p]", a_file);
-	if (a_file->path) {
-		zc_debug("a_file->path[%s]", a_file->path);
-		free(a_file->path);
-	}
+
 	free(a_file);
 }
 
@@ -152,15 +148,8 @@ static zlog_file_t *zlog_file_check_new(zlog_rotater_t * a_rotater, const char *
 		return NULL;
 	}
 
-	a_file->path = malloc(strlen(path) + 1);
-	if (!a_file->path) {
-		zc_error("calloc fail, errno[%d]", errno);
-		goto err;
-	}
-	a_file->path = zc_strdup(path);
-
 	nread = 0;
-	sscanf(a_file->path + a_rotater->num_start_len, "%d%n", &(a_file->index), &(nread));
+	sscanf(path + a_rotater->num_start_len, "%d%n", &(a_file->index), &(nread));
 
 	if (a_rotater->num_width != 0) {
 		if (nread < a_rotater->num_width) {
@@ -211,7 +200,7 @@ static int zlog_rotater_add_archive_files(zlog_rotater_t * a_rotater)
 	for (; pathc-- > 0; pathv++) {
 		a_file = zlog_file_check_new(a_rotater, *pathv);
 		if (!a_file) {
-			zc_warn("not the expect pattern file");
+			zc_warn("not the expect pattern file[%s]", *pathv);
 			continue;
 		}
 
@@ -240,16 +229,30 @@ static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater)
 	zlog_file_t *a_file;
 	char new_path[MAXLEN_PATH + 1];
 
-	zc_arraylist_foreach(a_rotater->files, i, a_file) {
-		if (a_rotater->max_count > 0
-			&& i < zc_arraylist_len(a_rotater->files) - a_rotater->max_count) {
-			/* unlink aa.0 aa.1 .. aa.(n-c) */
-			rc = unlink(a_file->path);
-			if (rc) {
-				zc_error("unlink[%s] fail, errno[%d]",a_file->path , errno);
-				return -1;
+	memcpy(new_path, a_rotater->glob_path, a_rotater->num_start_len);
+
+	if (a_rotater->max_count > 0) {
+		zc_arraylist_foreach(a_rotater->files, i, a_file) {
+			if (i < zc_arraylist_len(a_rotater->files) - a_rotater->max_count) {
+				/* unlink aa.0 aa.1 .. aa.(n-c) */
+				nwrite = snprintf(new_path + a_rotater->num_start_len,
+					sizeof(new_path) - a_rotater->num_start_len, "%0*d%s",
+					a_rotater->num_width, a_file->index,
+					a_rotater->glob_path + a_rotater->num_end_len);
+				if (nwrite < 0 ||
+					nwrite + a_rotater->num_start_len >= sizeof(new_path)) {
+					zc_error("nwirte[%d], overflow or errno[%d]",
+						nwrite + a_rotater->num_start_len, errno);
+					return -1;
+				}
+
+				rc = unlink(new_path);
+				if (rc) {
+					zc_error("unlink[%s] fail, errno[%d]", new_path, errno);
+					return -1;
+				}
+				continue;
 			}
-			continue;
 		}
 	}
 
@@ -266,13 +269,14 @@ static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater)
 	}
 
 	/* do the base_path mv  */
-	memset(new_path, 0x00, sizeof(new_path));
-	nwrite = snprintf(new_path, sizeof(new_path), "%.*s%0*d%s",
-		(int) a_rotater->num_start_len, a_rotater->glob_path,
+	nwrite = snprintf(new_path + a_rotater->num_start_len,
+		sizeof(new_path) - a_rotater->num_start_len, "%0*d%s",
 		a_rotater->num_width, j,
 		a_rotater->glob_path + a_rotater->num_end_len);
-	if (nwrite < 0 || nwrite >= sizeof(new_path)) {
-		zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+	if (nwrite < 0 ||
+		nwrite + a_rotater->num_start_len >= sizeof(new_path)) {
+		zc_error("nwirte[%d], overflow or errno[%d]",
+			nwrite + a_rotater->num_start_len, errno);
 		return -1;
 	}
 
@@ -290,8 +294,12 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
 	int i;
 	int rc = 0;
 	int nwrite;
+	char old_path[MAXLEN_PATH + 1];
 	char new_path[MAXLEN_PATH + 1];
 	zlog_file_t *a_file;
+
+	memcpy(old_path, a_rotater->glob_path, a_rotater->num_start_len);
+	memcpy(new_path, a_rotater->glob_path, a_rotater->num_start_len);
 
 	/* now in the list, aa.0 aa.1 aa.2 aa.02... */
 	for (i = zc_arraylist_len(a_rotater->files) - 1; i > -1; i--) {
@@ -301,41 +309,54 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
 			return -1;
 		}
 
+		nwrite = snprintf(old_path + a_rotater->num_start_len,
+			sizeof(old_path) - a_rotater->num_start_len, "%0*d%s",
+			a_rotater->num_width, a_file->index,
+			a_rotater->glob_path + a_rotater->num_end_len);
+		if (nwrite < 0 ||
+			nwrite + a_rotater->num_start_len >= sizeof(old_path)) {
+			zc_error("nwirte[%d], overflow or errno[%d]",
+				nwrite + a_rotater->num_start_len, errno);
+			return -1;
+		}
+
 		if (a_rotater->max_count > 0 && i >= a_rotater->max_count - 1) {
 			/* remove file.3 >= 3*/
-			rc = unlink(a_file->path);
+			rc = unlink(old_path);
 			if (rc) {
-				zc_error("unlink[%s] fail, errno[%d]",a_file->path , errno);
+				zc_error("unlink[%s] fail, errno[%d]", old_path, errno);
 				return -1;
 			}
 			continue;
 		}
 
 		/* begin rename aa.01.log -> aa.02.log , using i, as index in list maybe repeat */
-		memset(new_path, 0x00, sizeof(new_path));
-		nwrite = snprintf(new_path, sizeof(new_path), "%.*s%0*d%s",
-			(int) a_rotater->num_start_len, a_rotater->glob_path,
+		nwrite = snprintf(new_path + a_rotater->num_start_len,
+			sizeof(new_path) - a_rotater->num_start_len, "%0*d%s",
 			a_rotater->num_width, i + 1,
 			a_rotater->glob_path + a_rotater->num_end_len);
-		if (nwrite < 0 || nwrite >= sizeof(new_path)) {
-			zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+		if (nwrite < 0 ||
+			nwrite + a_rotater->num_start_len >= sizeof(new_path)) {
+			zc_error("nwirte[%d], overflow or errno[%d]",
+				nwrite + a_rotater->num_start_len, errno);
 			return -1;
 		}
 
-		if (rename(a_file->path, new_path)) {
-			zc_error("rename[%s]->[%s] fail, errno[%d]", a_file->path, new_path, errno);
+		if (rename(old_path, new_path)) {
+			zc_error("rename[%s]->[%s] fail, errno[%d]", old_path, new_path, errno);
 			return -1;
 		}
 	}
 
 	/* do the base_path mv  */
-	memset(new_path, 0x00, sizeof(new_path));
-	nwrite = snprintf(new_path, sizeof(new_path), "%.*s%0*d%s",
-		(int) a_rotater->num_start_len, a_rotater->glob_path,
+	nwrite = snprintf(new_path + a_rotater->num_start_len,
+		sizeof(new_path) - a_rotater->num_start_len, "%0*d%s",
 		a_rotater->num_width, 0,
 		a_rotater->glob_path + a_rotater->num_end_len);
-	if (nwrite < 0 || nwrite >= sizeof(new_path)) {
-		zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+	if (nwrite < 0 ||
+		nwrite + a_rotater->num_start_len >= sizeof(new_path)) {
+		zc_error("nwirte[%d], overflow or errno[%d]",
+			nwrite + a_rotater->num_start_len, errno);
 		return -1;
 	}
 
