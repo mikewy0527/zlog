@@ -5,6 +5,9 @@
  *
  * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
+
+#include <stdio.h>
+
 #include "errno.h"
 #include "zc_defs.h"
 #include "record.h"
@@ -26,6 +29,7 @@ void zlog_record_del(zlog_record_t *a_record)
 
 zlog_record_t *zlog_record_new(const char *name, zlog_record_fn output)
 {
+	int nwrite;
 	zlog_record_t *a_record;
 
 	zc_assert(name, NULL);
@@ -37,12 +41,12 @@ zlog_record_t *zlog_record_new(const char *name, zlog_record_fn output)
 		return NULL;
 	}
 
-	if (strlen(name) > sizeof(a_record->name) - 1) {
+	nwrite = snprintf(a_record->name, sizeof(a_record->name), "%s", name);
+	if (nwrite >= sizeof(a_record->name)) {
 		zc_error("name[%s] is too long", name);
 		goto err;
 	}
 
-	strcpy(a_record->name, name);
 	a_record->output = output;
 
 	zlog_record_profile(a_record, ZC_DEBUG);

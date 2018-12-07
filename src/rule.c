@@ -542,7 +542,8 @@ static int zlog_rule_parse_path(char *path_start, /* start with a " */
 		return 0;
 	}
 
-	specs = zc_arraylist_new((zc_arraylist_del_fn)zlog_spec_del);
+	specs = zc_arraylist_new((zc_arraylist_del_fn)zlog_spec_del,
+		ARRAY_LIST_DEFAULT_SIZE);
 	if (!path_specs) {
 		zc_error("zc_arraylist_new fail");
 		return -1;
@@ -560,6 +561,8 @@ static int zlog_rule_parse_path(char *path_start, /* start with a " */
 			goto err;
 		}
 	}
+
+	zc_arraylist_reduce_size(specs);
 
 	*path_specs = specs;
 	return 0;
@@ -615,7 +618,6 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 * selector     [f.INFO]
 	 * *action      ["%H/log/aa.log", 20MB * 12; MyTemplate]
 	 */
-	memset(&selector, 0x00, sizeof(selector));
 	nscan = sscanf(line, "%s %n", selector, &nread);
 	if (nscan != 1) {
 		zc_error("sscanf [%s] fail, selector", line);
@@ -628,7 +630,6 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 * category     [f]
 	 * level        [.INFO]
 	 */
-	memset(level, 0x00, sizeof(level));
 	nscan = sscanf(selector, " %[^.].%s", a_rule->category, level);
 	if (nscan != 2) {
 		zc_error("sscanf [%s] fail, category or level is null",
@@ -676,7 +677,6 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 */
 	switch (a_rule->compare_char) {
 	case '=':
-		memset(a_rule->level_bitmap, 0x00, sizeof(a_rule->level_bitmap));
 		a_rule->level_bitmap[a_rule->level / 8] |= (1 << (7 - a_rule->level % 8));
 		break;
 	case '!':
@@ -687,7 +687,6 @@ zlog_rule_t *zlog_rule_new(char *line,
 		memset(a_rule->level_bitmap, 0xFF, sizeof(a_rule->level_bitmap));
 		break;
 	case '.':
-		memset(a_rule->level_bitmap, 0x00, sizeof(a_rule->level_bitmap));
 		a_rule->level_bitmap[a_rule->level / 8] |= ~(0xFF << (8 - a_rule->level % 8));
 		memset(a_rule->level_bitmap + a_rule->level / 8 + 1, 0xFF,
 				sizeof(a_rule->level_bitmap) -  a_rule->level / 8 - 1);
@@ -699,7 +698,6 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 * format               [MyTemplate]
 	 */
 	nread = 0;
-	memset(format_name, 0x00, sizeof(format_name));
 	p = strrchr(action, ';');
 	if (p) {
 		nscan = sscanf(action, " %*[^;];%n%s", &nread, format_name);
@@ -738,7 +736,6 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 * file_path            [-"%E(HOME)/log/aa.log" ]           [>syslog ]
 	 * *file_limit          [20MB * 12 ~ "aa.#i.log" ]          [LOG_LOCAL0]
 	 */
-	memset(file_path, 0x00, sizeof(file_path));
 	nscan = sscanf(output, " %[^,],", file_path);
 	if (nscan < 1) {
 		zc_error("sscanf [%s] fail", action);
@@ -779,15 +776,14 @@ zlog_rule_t *zlog_rule_new(char *line,
 		}
 
 		if (file_limit) {
-			memset(archive_max_size, 0x00, sizeof(archive_max_size));
 			nscan = sscanf(file_limit, " %[0-9MmKkBb] * %d ~",
 					archive_max_size, &(a_rule->archive_max_count));
 			if (nscan) {
 				a_rule->archive_max_size = zc_parse_byte_size(archive_max_size);
 			}
+
 			p = strchr(file_limit, '"');
 			if (p) { /* archive file path exist */
-				memset(file_path, 0x00, sizeof(file_path));
 				memcpy(file_path, p, strlen(p) + 1);
 				rc = zlog_rule_parse_path(file_path, sizeof(file_path),
 					&(a_rule->archive_path),
@@ -887,7 +883,6 @@ zlog_rule_t *zlog_rule_new(char *line,
 				zc_error("record_path not start with \", [%s]", file_limit);
 				goto err;
 			}
-			memset(file_path, 0x00, sizeof(file_path));
 			memcpy(file_path, p, strlen(p) + 1);
 			rc = zlog_rule_parse_path(file_path, sizeof(file_path),
 				&(a_rule->record_path),

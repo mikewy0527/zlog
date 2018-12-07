@@ -52,11 +52,11 @@ static int zlog_level_list_set_default(zc_arraylist_t *levels)
 	|| zlog_level_list_set(levels, "! = 255, LOG_INFO");
 }
 
-zc_arraylist_t *zlog_level_list_new(void)
+zc_arraylist_t *zlog_level_list_new(int size)
 {
 	zc_arraylist_t *levels;
 
-	levels = zc_arraylist_new((zc_arraylist_del_fn)zlog_level_del);
+	levels = zc_arraylist_new((zc_arraylist_del_fn)zlog_level_del, size);
 	if (!levels) {
 		zc_error("zc_arraylist_new fail");
 		return NULL;

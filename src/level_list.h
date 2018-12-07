@@ -12,7 +12,7 @@
 #include "zc_defs.h"
 #include "level.h"
 
-zc_arraylist_t *zlog_level_list_new(void);
+zc_arraylist_t *zlog_level_list_new(int size);
 void zlog_level_list_del(zc_arraylist_t *levels);
 void zlog_level_list_profile(zc_arraylist_t *levels, int flag);
 

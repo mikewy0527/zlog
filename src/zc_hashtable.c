@@ -236,10 +236,10 @@ void zc_hashtable_remove(zc_hashtable_t * a_table, const void *a_key)
 	zc_hashtable_entry_t *p;
 	unsigned int i;
 
-        if (!a_table || !a_key) {
+	if (!a_table || !a_key) {
 		zc_error("a_table[%p] or a_key[%p] is NULL, just do nothing", a_table, a_key);
 		return;
-        }
+	}
 
 	i = a_table->hash(a_key) % a_table->tab_size;
 	for (p = (a_table->tab)[i]; p; p = p->next) {

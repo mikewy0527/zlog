@@ -137,19 +137,21 @@ zlog_conf_t *zlog_conf_new(const char *confpath)
 	a_conf->fsync_period = ZLOG_CONF_DEFAULT_FSYNC_PERIOD;
 	/* set default configuration end */
 
-	a_conf->levels = zlog_level_list_new();
+	a_conf->levels = zlog_level_list_new(ARRAY_LIST_DEFAULT_SIZE);
 	if (!a_conf->levels) {
 		zc_error("zlog_level_list_new fail");
 		goto err;
 	}
 
-	a_conf->formats = zc_arraylist_new((zc_arraylist_del_fn) zlog_format_del);
+	a_conf->formats = zc_arraylist_new((zc_arraylist_del_fn) zlog_format_del,
+		ARRAY_LIST_DEFAULT_SIZE);
 	if (!a_conf->formats) {
 		zc_error("zc_arraylist_new fail");
 		goto err;
 	}
 
-	a_conf->rules = zc_arraylist_new((zc_arraylist_del_fn) zlog_rule_del);
+	a_conf->rules = zc_arraylist_new((zc_arraylist_del_fn) zlog_rule_del,
+		ARRAY_LIST_DEFAULT_SIZE);
 	if (!a_conf->rules) {
 		zc_error("init rule_list fail");
 		goto err;
@@ -166,6 +168,10 @@ zlog_conf_t *zlog_conf_new(const char *confpath)
 			goto err;
 		}
 	}
+
+	zc_arraylist_reduce_size(a_conf->levels);
+	zc_arraylist_reduce_size(a_conf->formats);
+	zc_arraylist_reduce_size(a_conf->rules);
 
 	zlog_conf_profile(a_conf, ZC_DEBUG);
 	return a_conf;
@@ -212,6 +218,7 @@ static int zlog_conf_build_without_file(zlog_conf_t * a_conf)
 
 	return 0;
 }
+
 /*******************************************************************************/
 static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section);
 
@@ -255,7 +262,6 @@ static int zlog_conf_build_with_file(zlog_conf_t * a_conf)
 	/* Now process the file.
 	 */
 	pline = line;
-	memset(line, 0x00, MAXLEN_CFG_LINE + 1);
 	while (fgets(pline, (MAXLEN_CFG_LINE + 1) - (pline - line), fp) != NULL) {
 		++line_no;
 		line_len = strlen(pline);
@@ -335,22 +341,19 @@ exit:
 	return rc;
 }
 
+/*******************************************************************************/
+static int zlog_conf_parse_global_section(zlog_conf_t * a_conf, char *line);
+
 /* section [global:1] [levels:2] [formats:3] [rules:4] */
 static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 {
 	int nscan;
-	int nread;
-	char name[MAXLEN_CFG_NAME * 4 + 1];
-	char word_1[MAXLEN_CFG_NAME + 1];
-	char word_2[MAXLEN_CFG_NAME + 1];
-	char word_3[MAXLEN_CFG_NAME + 1];
-	char value[MAXLEN_PATH + 1];
+	char name[MAXLEN_CFG_NAME + 1];
 	zlog_format_t *a_format = NULL;
 	zlog_rule_t *a_rule = NULL;
 
 	/* get and set outer section flag, so it is a closure? haha */
 	if (line[0] == '[') {
-		int last_section = *section;
 		nscan = sscanf(line, "[ %[^] \t]", name);
 		if (STRCMP(name, ==, "global")) {
 			*section = 1;
@@ -360,17 +363,7 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 			*section = 3;
 		} else if (STRCMP(name, ==, "rules")) {
 			*section = 4;
-		} else {
-			zc_error("wrong section name[%s]", name);
-			return -1;
-		}
-		/* check the sequence of section, must increase */
-		if (last_section >= *section) {
-			zc_error("wrong sequence of section, must follow global->levels->formats->rules");
-			return -1;
-		}
 
-		if (*section == 4) {
 			if (a_conf->reload_conf_period != 0
 				&& a_conf->fsync_period >= a_conf->reload_conf_period) {
 				/* as all rule will be rebuilt when conf is reload,
@@ -399,69 +392,18 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 				zc_error("zlog_format_new fail");
 				return -1;
 			}
+		} else {
+			zc_error("wrong section name[%s]", name);
+			return -1;
 		}
+
 		return 0;
 	}
 
 	/* process detail */
 	switch (*section) {
 	case 1:
-		memset(name, 0x00, sizeof(name));
-		memset(value, 0x00, sizeof(value));
-		nscan = sscanf(line, " %[^=]= %s ", name, value);
-		if (nscan != 2) {
-			zc_error("sscanf [%s] fail, name or value is null", line);
-			return -1;
-		}
-
-		memset(word_1, 0x00, sizeof(word_1));
-		memset(word_2, 0x00, sizeof(word_2));
-		memset(word_3, 0x00, sizeof(word_3));
-		nread = 0;
-		nscan = sscanf(name, "%s%n%s%s", word_1, &nread, word_2, word_3);
-
-		if (STRCMP(word_1, ==, "strict") && STRCMP(word_2, ==, "init")) {
-			/* if environment variable ZLOG_STRICT_INIT is set
-			 * then always make it strict
-			 */
-			if (STRICMP(value, ==, "false") && !getenv("ZLOG_STRICT_INIT")) {
-				a_conf->strict_init = 0;
-			} else {
-				a_conf->strict_init = 1;
-			}
-		} else if (STRCMP(word_1, ==, "buffer") && STRCMP(word_2, ==, "min")) {
-			a_conf->buf_size_min = zc_parse_byte_size(value);
-		} else if (STRCMP(word_1, ==, "buffer") && STRCMP(word_2, ==, "max")) {
-			a_conf->buf_size_max = zc_parse_byte_size(value);
-		} else if (STRCMP(word_1, ==, "file") && STRCMP(word_2, ==, "perms")) {
-			sscanf(value, "%o", &(a_conf->file_perms));
-		} else if (STRCMP(word_1, ==, "rotate") &&
-				STRCMP(word_2, ==, "lock") && STRCMP(word_3, ==, "file")) {
-			/* may overwrite the inner default value, or last value */
-			if (a_conf->rotate_lock_file)
-				free(a_conf->rotate_lock_file);
-
-			if (STRCMP(value, ==, "self")) {
-				a_conf->rotate_lock_file = zc_strdup(a_conf->file);
-			} else {
-				a_conf->rotate_lock_file = zc_strdup(value);
-			}
-		} else if (STRCMP(word_1, ==, "default") && STRCMP(word_2, ==, "format")) {
-			/* so the input now is [format = "xxyy"], fit format's style */
-			if (a_conf->default_format_line)
-				free(a_conf->default_format_line);
-
-			a_conf->default_format_line = zc_strdup(line + nread);
-		} else if (STRCMP(word_1, ==, "reload") &&
-				STRCMP(word_2, ==, "conf") && STRCMP(word_3, ==, "period")) {
-			a_conf->reload_conf_period = zc_parse_byte_size(value);
-		} else if (STRCMP(word_1, ==, "fsync") && STRCMP(word_2, ==, "period")) {
-			a_conf->fsync_period = zc_parse_byte_size(value);
-		} else {
-			zc_error("name[%s] is not any one of global options", name);
-			if (a_conf->strict_init) return -1;
-		}
-		break;
+		return zlog_conf_parse_global_section(a_conf, line);
 	case 2:
 		if (zlog_level_list_set(a_conf->levels, line)) {
 			zc_error("zlog_level_list_set fail");
@@ -509,4 +451,68 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 
 	return 0;
 }
+
 /*******************************************************************************/
+static int zlog_conf_parse_global_section(zlog_conf_t * a_conf, char *line)
+{
+	int nscan;
+	int nread;
+	char name[MAXLEN_CFG_NAME * 4 + 1];
+	char word_1[MAXLEN_CFG_NAME + 1];
+	char word_2[MAXLEN_CFG_NAME + 1];
+	char word_3[MAXLEN_CFG_NAME + 1];
+	char value[MAXLEN_PATH + 1];
+
+	nscan = sscanf(line, " %[^=]= %s ", name, value);
+	if (nscan != 2) {
+		zc_error("sscanf [%s] fail, name or value is null", line);
+		return -1;
+	}
+
+	nread = 0;
+	nscan = sscanf(name, "%s%n%s%s", word_1, &nread, word_2, word_3);
+
+	if (STRCMP(word_1, ==, "strict") && STRCMP(word_2, ==, "init")) {
+		/* if environment variable ZLOG_STRICT_INIT is set
+		 * then always make it strict
+		 */
+		if (STRICMP(value, ==, "false") && !getenv("ZLOG_STRICT_INIT")) {
+			a_conf->strict_init = 0;
+		} else {
+			a_conf->strict_init = 1;
+		}
+	} else if (STRCMP(word_1, ==, "buffer") && STRCMP(word_2, ==, "min")) {
+		a_conf->buf_size_min = zc_parse_byte_size(value);
+	} else if (STRCMP(word_1, ==, "buffer") && STRCMP(word_2, ==, "max")) {
+		a_conf->buf_size_max = zc_parse_byte_size(value);
+	} else if (STRCMP(word_1, ==, "file") && STRCMP(word_2, ==, "perms")) {
+		sscanf(value, "%o", &(a_conf->file_perms));
+	} else if (STRCMP(word_1, ==, "rotate") &&
+			STRCMP(word_2, ==, "lock") && STRCMP(word_3, ==, "file")) {
+		/* may overwrite the inner default value, or last value */
+		if (a_conf->rotate_lock_file)
+			free(a_conf->rotate_lock_file);
+
+		if (STRCMP(value, ==, "self")) {
+			a_conf->rotate_lock_file = zc_strdup(a_conf->file);
+		} else {
+			a_conf->rotate_lock_file = zc_strdup(value);
+		}
+	} else if (STRCMP(word_1, ==, "default") && STRCMP(word_2, ==, "format")) {
+		/* so the input now is [format = "xxyy"], fit format's style */
+		if (a_conf->default_format_line)
+			free(a_conf->default_format_line);
+
+		a_conf->default_format_line = zc_strdup(line + nread);
+	} else if (STRCMP(word_1, ==, "reload") &&
+			STRCMP(word_2, ==, "conf") && STRCMP(word_3, ==, "period")) {
+		a_conf->reload_conf_period = zc_parse_byte_size(value);
+	} else if (STRCMP(word_1, ==, "fsync") && STRCMP(word_2, ==, "period")) {
+		a_conf->fsync_period = zc_parse_byte_size(value);
+	} else {
+		zc_error("name[%s] is not any one of global options", name);
+		if (a_conf->strict_init) return -1;
+	}
+
+	return 0;
+}

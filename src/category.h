@@ -13,7 +13,7 @@
 #include "thread.h"
 
 typedef struct zlog_category_s {
-	char name[MAXLEN_PATH + 1];
+	char name[MAXLEN_CFG_NAME + 1];
 	size_t name_len;
 	unsigned char level_bitmap[32];
 	unsigned char level_bitmap_backup[32];

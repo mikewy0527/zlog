@@ -76,9 +76,6 @@ zlog_level_t *zlog_level_new(char *line)
 
 	zc_assert(line, NULL);
 
-	memset(str, 0x00, sizeof(str));
-	memset(sl, 0x00, sizeof(sl));
-
 	nscan = sscanf(line, " %[^= \t] = %d ,%s", str, &l, sl);
 	if (nscan < 2) {
 		zc_error("level[%s], syntax wrong", line);

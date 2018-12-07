@@ -76,7 +76,6 @@ zlog_format_t *zlog_format_new(char *line, int * time_cache_count)
 	 * name         default
 	 * pattern      %d(%F %X.%l) %-6V (%c:%F:%L) - %m%n
 	 */
-	memset(a_format->name, 0x00, sizeof(a_format->name));
 	nread = 0;
 	nscan = sscanf(line, " %[^= \t] = %n", a_format->name, &nread);
 	if (nscan != 1) {
@@ -107,7 +106,6 @@ zlog_format_t *zlog_format_new(char *line, int * time_cache_count)
 		zc_error("pattern is too long");
 		goto err;
 	}
-	memset(tmp_pattern, 0x00, sizeof(tmp_pattern));
 	memcpy(tmp_pattern, p_start, p_end - p_start);
 
 	if (zc_str_replace_env(tmp_pattern, sizeof(tmp_pattern))) {
@@ -116,8 +114,8 @@ zlog_format_t *zlog_format_new(char *line, int * time_cache_count)
 	}
 	a_format->pattern = zc_strdup(tmp_pattern);
 
-	a_format->pattern_specs =
-	    zc_arraylist_new((zc_arraylist_del_fn) zlog_spec_del);
+	a_format->pattern_specs = zc_arraylist_new((zc_arraylist_del_fn) zlog_spec_del,
+		ARRAY_LIST_DEFAULT_SIZE);
 	if (!(a_format->pattern_specs)) {
 		zc_error("zc_arraylist_new fail");
 		goto err;
@@ -136,6 +134,8 @@ zlog_format_t *zlog_format_new(char *line, int * time_cache_count)
 			goto err;
 		}
 	}
+
+	zc_arraylist_reduce_size(a_format->pattern_specs);
 
 	zlog_format_profile(a_format, ZC_DEBUG);
 	return a_format;

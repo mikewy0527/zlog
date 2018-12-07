@@ -21,7 +21,7 @@ typedef struct zlog_msg_s {
 typedef int (*zlog_record_fn)(zlog_msg_t * msg);
 
 typedef struct zlog_record_s {
-	char name[MAXLEN_PATH + 1];
+	char name[MAXLEN_CFG_NAME + 1];
 	zlog_record_fn output;
 } zlog_record_t;
 

@@ -54,7 +54,9 @@ static void zlog_cateogry_overlap_bitmap(zlog_category_t * a_category, zlog_rule
 	}
 }
 
-static int zlog_category_obtain_rules(zlog_category_t * a_category, zc_arraylist_t * rules)
+static int zlog_category_obtain_rules(zlog_category_t * a_category,
+	const char* name,
+	zc_arraylist_t * rules)
 {
 	int i;
 	int count = 0;
@@ -67,7 +69,7 @@ static int zlog_category_obtain_rules(zlog_category_t * a_category, zc_arraylist
 
 	memset(a_category->level_bitmap, 0x00, sizeof(a_category->level_bitmap));
 
-	a_category->fit_rules = zc_arraylist_new(NULL);
+	a_category->fit_rules = zc_arraylist_new(NULL, rules->len);
 	if (!(a_category->fit_rules)) {
 		zc_error("zc_arraylist_new fail");
 		return -1;
@@ -75,7 +77,7 @@ static int zlog_category_obtain_rules(zlog_category_t * a_category, zc_arraylist
 
 	/* get match rules from all rules */
 	zc_arraylist_foreach(rules, i, a_rule) {
-		fit = zlog_rule_match_category(a_rule, a_category->name);
+		fit = zlog_rule_match_category(a_rule, (char *)name);
 		if (fit) {
 			if (zc_arraylist_add(a_category->fit_rules, a_rule)) {
 				zc_error("zc_arrylist_add fail");
@@ -92,7 +94,7 @@ static int zlog_category_obtain_rules(zlog_category_t * a_category, zc_arraylist
 
 	if (count == 0) {
 		if (wastebin_rule) {
-			zc_debug("category[%s], no match rules, use wastebin_rule", a_category->name);
+			zc_debug("category[%s], no match rules, use wastebin_rule", name);
 			if (zc_arraylist_add(a_category->fit_rules, wastebin_rule)) {
 				zc_error("zc_arrylist_add fail");
 				goto err;
@@ -100,9 +102,11 @@ static int zlog_category_obtain_rules(zlog_category_t * a_category, zc_arraylist
 			zlog_cateogry_overlap_bitmap(a_category, wastebin_rule);
 			count++;
 		} else {
-			zc_debug("category[%s], no match rules & no wastebin_rule", a_category->name);
+			zc_debug("category[%s], no match rules & no wastebin_rule", name);
 		}
 	}
+
+	zc_arraylist_reduce_size(a_category->fit_rules);
 
 	return 0;
 err:
@@ -129,12 +133,14 @@ zlog_category_t *zlog_category_new(const char *name, zc_arraylist_t * rules)
 		zc_error("calloc fail, errno[%d]", errno);
 		return NULL;
 	}
-	strcpy(a_category->name, name);
-	a_category->name_len = len;
-	if (zlog_category_obtain_rules(a_category, rules)) {
+
+	if (zlog_category_obtain_rules(a_category, name, rules)) {
 		zc_error("zlog_category_fit_rules fail");
 		goto err;
 	}
+
+	memcpy(a_category->name, name, len + 1);
+	a_category->name_len = len;
 
 	zlog_category_profile(a_category, ZC_DEBUG);
 	return a_category;
@@ -157,9 +163,9 @@ int zlog_category_update_rules(zlog_category_t * a_category, zc_arraylist_t * ne
 
 	memcpy(a_category->level_bitmap_backup, a_category->level_bitmap,
 			sizeof(a_category->level_bitmap));
-	
+
 	/* 2nd, obtain new_rules to fit_rules */
-	if (zlog_category_obtain_rules(a_category, new_rules)) {
+	if (zlog_category_obtain_rules(a_category, a_category->name, new_rules)) {
 		zc_error("zlog_category_obtain_rules fail");
 		a_category->fit_rules = NULL;
 		return -1;
@@ -212,7 +218,7 @@ void zlog_category_rollback_rules(zlog_category_t * a_category)
 			sizeof(a_category->level_bitmap));
 	memset(a_category->level_bitmap_backup, 0x00,
 			sizeof(a_category->level_bitmap_backup));
-	
+
 	return; /* always success */
 }
 

@@ -13,9 +13,11 @@
 
 #include "zc_defs.h"
 
-zc_arraylist_t *zc_arraylist_new(zc_arraylist_del_fn del)
+zc_arraylist_t *zc_arraylist_new(zc_arraylist_del_fn del, int size)
 {
 	zc_arraylist_t *a_list;
+
+	zc_assert(size > 0, NULL);
 
 	a_list = (zc_arraylist_t *) calloc(1, sizeof(zc_arraylist_t));
 	if (!a_list) {
@@ -23,7 +25,7 @@ zc_arraylist_t *zc_arraylist_new(zc_arraylist_del_fn del)
 		return NULL;
 	}
 
-	a_list->size = ARRAY_LIST_DEFAULT_SIZE;
+	a_list->size = size;
 	a_list->len = 0;
 
 	/* this could be NULL */
@@ -58,6 +60,24 @@ void zc_arraylist_del(zc_arraylist_t * a_list)
 	free(a_list);
 
 	return;
+}
+
+int zc_arraylist_reduce_size(zc_arraylist_t *a_list)
+{
+	void *tmp;
+
+	if (!a_list || a_list->len <= 0 || a_list->size == a_list->len)
+		return 0;
+
+	tmp = realloc(a_list->array, a_list->len * sizeof(void *));
+	if (!tmp) {
+		zc_error("realloc fail, errno[%d]", errno);
+		return -1;
+	}
+
+	a_list->size = a_list->len;
+
+	return 0;
 }
 
 static int zc_arraylist_expand_inner(zc_arraylist_t * a_list, int max)

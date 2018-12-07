@@ -178,12 +178,6 @@ static int zlog_rotater_add_archive_files(zlog_rotater_t * a_rotater)
 	char **pathv;
 	zlog_file_t *a_file;
 
-	a_rotater->files = zc_arraylist_new((zc_arraylist_del_fn)zlog_file_del);
-	if (!a_rotater->files) {
-		zc_error("zc_arraylist_new fail");
-		return -1;
-	}
-
 	/* scan file which is aa.*.log and aa */
 	rc = glob(a_rotater->glob_path, GLOB_ERR | GLOB_MARK | GLOB_NOSORT, NULL, &glob_buf);
 	if (rc == GLOB_NOMATCH) {
@@ -195,6 +189,12 @@ static int zlog_rotater_add_archive_files(zlog_rotater_t * a_rotater)
 
 	pathv = glob_buf.gl_pathv;
 	pathc = glob_buf.gl_pathc;
+
+	a_rotater->files = zc_arraylist_new((zc_arraylist_del_fn)zlog_file_del, pathc);
+	if (!a_rotater->files) {
+		zc_error("zc_arraylist_new fail");
+		return -1;
+	}
 
 	/* check and find match aa.[0-9]*.log, depend on num_width */
 	for (; pathc-- > 0; pathv++) {
@@ -212,6 +212,8 @@ static int zlog_rotater_add_archive_files(zlog_rotater_t * a_rotater)
 			goto err;
 		}
 	}
+
+	zc_arraylist_reduce_size(a_rotater->files);
 
 exit:
 	globfree(&glob_buf);
