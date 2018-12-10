@@ -69,7 +69,7 @@ static int zlog_category_obtain_rules(zlog_category_t * a_category,
 
 	memset(a_category->level_bitmap, 0x00, sizeof(a_category->level_bitmap));
 
-	a_category->fit_rules = zc_arraylist_new(NULL, rules->len);
+	a_category->fit_rules = zc_arraylist_new(NULL, zc_arraylist_len(rules));
 	if (!(a_category->fit_rules)) {
 		zc_error("zc_arraylist_new fail");
 		return -1;
