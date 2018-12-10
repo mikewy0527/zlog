@@ -165,33 +165,16 @@ static int zlog_rule_output_static_file_rotate(zlog_rule_t * a_rule, zlog_thread
 	size_t len;
 	struct zlog_stat info;
 	int fd;
+	char new_path[MAXLEN_PATH + 1];
 
 	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
 		zc_error("zlog_format_gen_msg fail");
 		return -1;
 	}
 
-	fd = open(a_rule->file_path,
-		a_rule->file_open_flags | O_WRONLY | O_APPEND | O_CREAT, a_rule->file_perms);
-	if (fd < 0) {
-		zc_error("open file[%s] fail, errno[%d]", a_rule->file_path, errno);
-		return -1;
-	}
-
 	len = zlog_buf_len(a_thread->msg_buf);
-	if (write(fd, zlog_buf_str(a_thread->msg_buf), len) < 0) {
+	if (write(a_rule->static_fd, zlog_buf_str(a_thread->msg_buf), len) < 0) {
 		zc_error("write fail, errno[%d]", errno);
-		close(fd);
-		return -1;
-	}
-
-	if (a_rule->fsync_period && ++a_rule->fsync_count >= a_rule->fsync_period) {
-		a_rule->fsync_count = 0;
-		if (fsync(fd)) zc_error("fsync[%d] fail, errno[%d]", fd, errno);
-	}
-
-	if (close(fd) < 0) {
-		zc_error("close fail, maybe cause by write, errno[%d]", errno);
 		return -1;
 	}
 
@@ -214,12 +197,27 @@ static int zlog_rule_output_static_file_rotate(zlog_rule_t * a_rule, zlog_thread
 	}
 
 	/* file not so big, return */
-	if (info.st_size + len < a_rule->archive_max_size) return 0;
+	if (info.st_size + len < a_rule->archive_max_size)
+		return 0;
+
+//	snprintf(new_path, sizeof(new_path), "%s-lessnew.tmp", a_rule->file_path);
+//	rename(a_rule->file_path, new_path);
+
+//	fd = open(a_rule->file_path,
+//		a_rule->file_open_flags | O_WRONLY | O_APPEND | O_CREAT, a_rule->file_perms);
+//	if (fd < 0) {
+//		zc_error("open file[%s] fail, errno[%d]", a_rule->file_path, errno);
+//		return -1;
+//	}
+
+//	dup2(fd, a_rule->static_fd);
+//	close(fd);
 
 	if (zlog_rotater_rotate(zlog_env_conf->rotater,
 		a_rule->file_path, len,
 		zlog_rule_gen_archive_path(a_rule, a_thread),
-		a_rule->archive_max_size, a_rule->archive_max_count)
+		a_rule->archive_max_size, a_rule->archive_max_count,
+		a_rule->file_open_flags, a_rule->file_perms, &(a_rule->static_fd))
 		) {
 		zc_error("zlog_rotater_rotate fail");
 		return -1;
@@ -340,7 +338,8 @@ static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_threa
 	if (zlog_rotater_rotate(zlog_env_conf->rotater,
 		path, len,
 		zlog_rule_gen_archive_path(a_rule, a_thread),
-		a_rule->archive_max_size, a_rule->archive_max_count)
+		a_rule->archive_max_size, a_rule->archive_max_count,
+		a_rule->file_open_flags, a_rule->file_perms, &(a_rule->static_fd))
 		) {
 		zc_error("zlog_rotater_rotate fail");
 		return -1;

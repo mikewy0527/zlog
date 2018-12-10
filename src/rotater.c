@@ -223,13 +223,15 @@ err:
 	return -1;
 }
 
-static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater)
+static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater,
+		int file_open_flags, unsigned int file_perms, int *orig_fd)
 {
 	int rc = 0;
 	int nwrite = 0;
 	int i, j;
 	zlog_file_t *a_file;
 	char new_path[MAXLEN_PATH + 1];
+	int fd;
 
 	memcpy(new_path, a_rotater->glob_path, a_rotater->num_start_len);
 
@@ -287,11 +289,23 @@ static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater)
 		return -1;
 	}
 
+	fd = open(a_rotater->base_path,
+		file_open_flags | O_WRONLY | O_APPEND | O_CREAT,
+		file_perms);
+	if (fd < 0) {
+		zc_error("open file[%s] fail, errno[%d]", a_rotater->base_path, errno);
+		return -1;
+	}
+
+	dup2(fd, *orig_fd);
+	close(fd);
+
 	return 0;
 }
 
 
-static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
+static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater,
+		int file_open_flags, unsigned int file_perms, int *orig_fd)
 {
 	int i;
 	int rc = 0;
@@ -299,6 +313,7 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
 	char old_path[MAXLEN_PATH + 1];
 	char new_path[MAXLEN_PATH + 1];
 	zlog_file_t *a_file;
+	int fd;
 
 	memcpy(old_path, a_rotater->glob_path, a_rotater->num_start_len);
 	memcpy(new_path, a_rotater->glob_path, a_rotater->num_start_len);
@@ -369,6 +384,17 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
 		return -1;
 	}
 
+	fd = open(a_rotater->base_path,
+		file_open_flags | O_WRONLY | O_APPEND | O_CREAT,
+		file_perms);
+	if (fd < 0) {
+		zc_error("open file[%s] fail, errno[%d]", a_rotater->base_path, errno);
+		return -1;
+	}
+
+	dup2(fd, *orig_fd);
+	close(fd);
+
 	return 0;
 }
 
@@ -380,11 +406,12 @@ static int zlog_rotater_parse_archive_path(zlog_rotater_t * a_rotater)
 	char *p;
 	size_t len;
 
-	zc_assert(a_rotater->archive_path, -1);
-
 	/* no archive path is set */
-	if (a_rotater->archive_path[0] == '\0') {
+	if (!a_rotater->archive_path || a_rotater->archive_path[0] == '\0') {
 		len = strlen(a_rotater->base_path);
+//		len = strlen(a_rotater->base_path) - strlen("-lessnew.tmp");
+//		memcpy(a_rotater->glob_path, a_rotater->base_path, len);
+//		memcpy(a_rotater->glob_path + len, ".*", strlen(".*") + 1);
 		nwrite = snprintf(a_rotater->glob_path, sizeof(a_rotater->glob_path),
 					"%s.*", a_rotater->base_path);
 		if (nwrite < 0 || nwrite > sizeof(a_rotater->glob_path)) {
@@ -392,7 +419,7 @@ static int zlog_rotater_parse_archive_path(zlog_rotater_t * a_rotater)
 			return -1;
 		}
 
-		a_rotater->mv_type = ROLLING;
+		a_rotater->mv_type = SEQUENCE;
 		a_rotater->num_width = 0;
 		a_rotater->num_start_len = len + 1;
 		a_rotater->num_end_len = len + 2;
@@ -453,7 +480,8 @@ static void zlog_rotater_clean(zlog_rotater_t *a_rotater)
 }
 
 static int zlog_rotater_lsmv(zlog_rotater_t *a_rotater,
-		char *base_path, char *archive_path, int archive_max_count)
+		char *base_path, char *archive_path, int archive_max_count,
+		int file_open_flags, unsigned int file_perms, int *orig_fd)
 {
 	int rc = 0;
 
@@ -473,13 +501,13 @@ static int zlog_rotater_lsmv(zlog_rotater_t *a_rotater,
 	}
 
 	if (a_rotater->mv_type == ROLLING) {
-		rc = zlog_rotater_roll_files(a_rotater);
+		rc = zlog_rotater_roll_files(a_rotater, file_open_flags, file_perms, orig_fd);
 		if (rc) {
 			zc_error("zlog_rotater_roll_files fail");
 			goto err;
 		}
 	} else if (a_rotater->mv_type == SEQUENCE) {
-		rc = zlog_rotater_seq_files(a_rotater);
+		rc = zlog_rotater_seq_files(a_rotater, file_open_flags, file_perms, orig_fd);
 		if (rc) {
 			zc_error("zlog_rotater_seq_files fail");
 			goto err;
@@ -556,7 +584,8 @@ static int zlog_rotater_unlock(zlog_rotater_t *a_rotater)
 
 int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 		char *base_path, size_t msg_len,
-		char *archive_path, long archive_max_size, int archive_max_count)
+		char *archive_path, long archive_max_size, int archive_max_count,
+		int file_open_flags, unsigned int file_perms, int *orig_fd)
 {
 	int rc = 0;
 	struct zlog_stat info;
@@ -583,7 +612,8 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 	}
 
 	/* begin list and move files */
-	rc = zlog_rotater_lsmv(a_rotater, base_path, archive_path, archive_max_count);
+	rc = zlog_rotater_lsmv(a_rotater, base_path, archive_path, archive_max_count,
+		file_open_flags, file_perms, orig_fd);
 	if (rc) {
 		zc_error("zlog_rotater_lsmv [%s] fail, return", base_path);
 		rc = -1;
