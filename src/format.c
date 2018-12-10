@@ -107,6 +107,7 @@ zlog_format_t *zlog_format_new(char *line, int * time_cache_count)
 		goto err;
 	}
 	memcpy(tmp_pattern, p_start, p_end - p_start);
+	tmp_pattern[p_end - p_start] = '\0';
 
 	if (zc_str_replace_env(tmp_pattern, sizeof(tmp_pattern))) {
 		zc_error("zc_str_replace_env fail");

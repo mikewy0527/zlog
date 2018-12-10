@@ -233,7 +233,7 @@ static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater)
 
 	memcpy(new_path, a_rotater->glob_path, a_rotater->num_start_len);
 
-	if (a_rotater->max_count > 0) {
+	if (a_rotater->files && a_rotater->max_count > 0) {
 		zc_arraylist_foreach(a_rotater->files, i, a_file) {
 			if (i < zc_arraylist_len(a_rotater->files) - a_rotater->max_count) {
 				/* unlink aa.0 aa.1 .. aa.(n-c) */
@@ -258,7 +258,7 @@ static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater)
 		}
 	}
 
-	if (zc_arraylist_len(a_rotater->files) > 0) { /* list is not empty */
+	if (a_rotater->files && zc_arraylist_len(a_rotater->files) > 0) { /* list is not empty */
 		a_file = zc_arraylist_get(a_rotater->files, zc_arraylist_len(a_rotater->files)-1);
 		if (!a_file) {
 			zc_error("zc_arraylist_get fail");
@@ -304,49 +304,51 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
 	memcpy(new_path, a_rotater->glob_path, a_rotater->num_start_len);
 
 	/* now in the list, aa.0 aa.1 aa.2 aa.02... */
-	for (i = zc_arraylist_len(a_rotater->files) - 1; i > -1; i--) {
-		a_file = zc_arraylist_get(a_rotater->files, i);
-		if (!a_file) {
-			zc_error("zc_arraylist_get fail");
-			return -1;
-		}
-
-		nwrite = snprintf(old_path + a_rotater->num_start_len,
-			sizeof(old_path) - a_rotater->num_start_len, "%0*d%s",
-			a_rotater->num_width, a_file->index,
-			a_rotater->glob_path + a_rotater->num_end_len);
-		if (nwrite < 0 ||
-			nwrite + a_rotater->num_start_len >= sizeof(old_path)) {
-			zc_error("nwirte[%d], overflow or errno[%d]",
-				nwrite + a_rotater->num_start_len, errno);
-			return -1;
-		}
-
-		if (a_rotater->max_count > 0 && i >= a_rotater->max_count - 1) {
-			/* remove file.3 >= 3*/
-			rc = unlink(old_path);
-			if (rc) {
-				zc_error("unlink[%s] fail, errno[%d]", old_path, errno);
+	if (a_rotater->files) {
+		for (i = zc_arraylist_len(a_rotater->files) - 1; i > -1; i--) {
+			a_file = zc_arraylist_get(a_rotater->files, i);
+			if (!a_file) {
+				zc_error("zc_arraylist_get fail");
 				return -1;
 			}
-			continue;
-		}
 
-		/* begin rename aa.01.log -> aa.02.log , using i, as index in list maybe repeat */
-		nwrite = snprintf(new_path + a_rotater->num_start_len,
-			sizeof(new_path) - a_rotater->num_start_len, "%0*d%s",
-			a_rotater->num_width, i + 1,
-			a_rotater->glob_path + a_rotater->num_end_len);
-		if (nwrite < 0 ||
-			nwrite + a_rotater->num_start_len >= sizeof(new_path)) {
-			zc_error("nwirte[%d], overflow or errno[%d]",
-				nwrite + a_rotater->num_start_len, errno);
-			return -1;
-		}
+			nwrite = snprintf(old_path + a_rotater->num_start_len,
+				sizeof(old_path) - a_rotater->num_start_len, "%0*d%s",
+				a_rotater->num_width, a_file->index,
+				a_rotater->glob_path + a_rotater->num_end_len);
+			if (nwrite < 0 ||
+				nwrite + a_rotater->num_start_len >= sizeof(old_path)) {
+				zc_error("nwirte[%d], overflow or errno[%d]",
+					nwrite + a_rotater->num_start_len, errno);
+				return -1;
+			}
 
-		if (rename(old_path, new_path)) {
-			zc_error("rename[%s]->[%s] fail, errno[%d]", old_path, new_path, errno);
-			return -1;
+			if (a_rotater->max_count > 0 && i >= a_rotater->max_count - 1) {
+				/* remove file.3 >= 3*/
+				rc = unlink(old_path);
+				if (rc) {
+					zc_error("unlink[%s] fail, errno[%d]", old_path, errno);
+					return -1;
+				}
+				continue;
+			}
+
+			/* begin rename aa.01.log -> aa.02.log , using i, as index in list maybe repeat */
+			nwrite = snprintf(new_path + a_rotater->num_start_len,
+				sizeof(new_path) - a_rotater->num_start_len, "%0*d%s",
+				a_rotater->num_width, i + 1,
+				a_rotater->glob_path + a_rotater->num_end_len);
+			if (nwrite < 0 ||
+				nwrite + a_rotater->num_start_len >= sizeof(new_path)) {
+				zc_error("nwirte[%d], overflow or errno[%d]",
+					nwrite + a_rotater->num_start_len, errno);
+				return -1;
+			}
+
+			if (rename(old_path, new_path)) {
+				zc_error("rename[%s]->[%s] fail, errno[%d]", old_path, new_path, errno);
+				return -1;
+			}
 		}
 	}
 
@@ -374,27 +376,26 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
 static int zlog_rotater_parse_archive_path(zlog_rotater_t * a_rotater)
 {
 	int nread;
+	int nwrite;
 	char *p;
 	size_t len;
-	size_t base_len;
 
 	zc_assert(a_rotater->archive_path, -1);
 
 	/* no archive path is set */
 	if (a_rotater->archive_path[0] == '\0') {
-		base_len = strlen(a_rotater->base_path);
-		len = base_len + 2 + 1;
-		a_rotater->glob_path = malloc(len);
-		if (!a_rotater->glob_path) {
-			zc_error("malloc failed, errno[%d]", errno);
+		len = strlen(a_rotater->base_path);
+		nwrite = snprintf(a_rotater->glob_path, sizeof(a_rotater->glob_path),
+					"%s.*", a_rotater->base_path);
+		if (nwrite < 0 || nwrite > sizeof(a_rotater->glob_path)) {
+			zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
 			return -1;
 		}
-		snprintf(a_rotater->glob_path, len, "%s.*", a_rotater->base_path);
 
 		a_rotater->mv_type = ROLLING;
 		a_rotater->num_width = 0;
-		a_rotater->num_start_len = base_len + 1;
-		a_rotater->num_end_len = base_len + 2;
+		a_rotater->num_start_len = len + 1;
+		a_rotater->num_end_len = len + 2;
 	} else {
 		/* find the 1st # */
 		p = strchr(a_rotater->archive_path, '#');
@@ -416,19 +417,22 @@ static int zlog_rotater_parse_archive_path(zlog_rotater_t * a_rotater)
 		}
 
 		/* copy and substitue #i to * in glob_path*/
-		base_len = p - a_rotater->archive_path;
-		len = base_len + 1 + strlen(p + nread + 1) + 1;
-		a_rotater->glob_path = malloc(len);
-		if (!a_rotater->glob_path) {
-			zc_error("malloc failed, errno[%d]", errno);
+		len = p - a_rotater->archive_path;
+		if (len > sizeof(a_rotater->glob_path) - 1) {
+			zc_error("sizeof glob_path not enough,len[%ld]", (long) len);
 			return -1;
 		}
-		memcpy(a_rotater->glob_path, a_rotater->archive_path, base_len);
-		snprintf(a_rotater->glob_path + base_len, len - base_len,
-				"*%s", p + nread + 1);
+		memcpy(a_rotater->glob_path, a_rotater->archive_path, len);
 
-		a_rotater->num_start_len = base_len;
-		a_rotater->num_end_len = base_len + 1;
+		nwrite = snprintf(a_rotater->glob_path + len, sizeof(a_rotater->glob_path) - len,
+						"*%s", p + nread + 1);
+		if (nwrite < 0 || nwrite > sizeof(a_rotater->glob_path) - len) {
+			zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+			return -1;
+		}
+
+		a_rotater->num_start_len = len;
+		a_rotater->num_end_len = len + 1;
 	}
 
 	return 0;
@@ -443,9 +447,6 @@ static void zlog_rotater_clean(zlog_rotater_t *a_rotater)
 	a_rotater->num_width = 0;
 	a_rotater->num_start_len = 0;
 	a_rotater->num_end_len = 0;
-
-	if (a_rotater->glob_path) free(a_rotater->glob_path);
-	a_rotater->glob_path = NULL;
 
 	if (a_rotater->files) zc_arraylist_del(a_rotater->files);
 	a_rotater->files = NULL;

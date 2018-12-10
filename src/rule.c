@@ -76,6 +76,7 @@ void zlog_rule_profile(zlog_rule_t * a_rule, int flag)
 
 static int zlog_rule_output_static_file_single(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
 {
+	int fd;
 	struct stat stb;
 	int do_file_reload = 0;
 	int redo_inode_stat = 0;
@@ -99,14 +100,16 @@ static int zlog_rule_output_static_file_single(zlog_rule_t * a_rule, zlog_thread
 	}
 
 	if (do_file_reload) {
-		close(a_rule->static_fd);
-		a_rule->static_fd = open(a_rule->file_path,
+		fd = open(a_rule->file_path,
 			O_WRONLY | O_APPEND | O_CREAT | a_rule->file_open_flags,
 			a_rule->file_perms);
-		if (a_rule->static_fd < 0) {
+		if (fd < 0) {
 			zc_error("open file[%s] fail, errno[%d]", a_rule->file_path, errno);
 			return -1;
 		}
+
+		dup2(fd, a_rule->static_fd);
+		close(fd);
 
 		/* save off the new dev/inode info from the stat call we already did */
 		if (redo_inode_stat) {
@@ -630,6 +633,7 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 * category     [f]
 	 * level        [.INFO]
 	 */
+	level[0] = '\0';
 	nscan = sscanf(selector, " %[^.].%s", a_rule->category, level);
 	if (nscan != 2) {
 		zc_error("sscanf [%s] fail, category or level is null",
@@ -698,6 +702,7 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 * format               [MyTemplate]
 	 */
 	nread = 0;
+	format_name[0] = '\0';
 	p = strrchr(action, ';');
 	if (p) {
 		nscan = sscanf(action, " %*[^;];%n%s", &nread, format_name);
@@ -736,6 +741,7 @@ zlog_rule_t *zlog_rule_new(char *line,
 	 * file_path            [-"%E(HOME)/log/aa.log" ]           [>syslog ]
 	 * *file_limit          [20MB * 12 ~ "aa.#i.log" ]          [LOG_LOCAL0]
 	 */
+	file_path[0] = '\0';
 	nscan = sscanf(output, " %[^,],", file_path);
 	if (nscan < 1) {
 		zc_error("sscanf [%s] fail", action);

@@ -85,7 +85,7 @@ int zlog_level_list_set(zc_arraylist_t *levels, char *line)
 		return -1;
 	}
 
-	if (zc_arraylist_set(levels, levels->len, a_level)) {
+	if (zc_arraylist_set(levels, zc_arraylist_len(levels), a_level)) {
 		zc_error("zc_arraylist_set fail");
 		goto err;
 	}
@@ -113,7 +113,7 @@ zlog_level_t *zlog_level_list_get(zc_arraylist_t *levels, int l)
 		}
 	}
 
-	if (i >= levels->len) {
+	if (i >= zc_arraylist_len(levels)) {
 		zc_error("l[%d] not in (0,254), or has no level defined,"
 			"see configure file define, set to UNKOWN", l);
 		a_level = unkown_level;

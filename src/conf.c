@@ -347,14 +347,13 @@ static int zlog_conf_parse_global_section(zlog_conf_t * a_conf, char *line);
 /* section [global:1] [levels:2] [formats:3] [rules:4] */
 static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 {
-	int nscan;
 	char name[MAXLEN_CFG_NAME + 1];
 	zlog_format_t *a_format = NULL;
 	zlog_rule_t *a_rule = NULL;
 
 	/* get and set outer section flag, so it is a closure? haha */
 	if (line[0] == '[') {
-		nscan = sscanf(line, "[ %[^] \t]", name);
+		sscanf(line, "[ %[^] \t]", name);
 		if (STRCMP(name, ==, "global")) {
 			*section = 1;
 		} else if (STRCMP(name, ==, "levels")) {
@@ -463,6 +462,7 @@ static int zlog_conf_parse_global_section(zlog_conf_t * a_conf, char *line)
 	char word_3[MAXLEN_CFG_NAME + 1];
 	char value[MAXLEN_PATH + 1];
 
+	value[0] = '\0';
 	nscan = sscanf(line, " %[^=]= %s ", name, value);
 	if (nscan != 2) {
 		zc_error("sscanf [%s] fail, name or value is null", line);
@@ -470,6 +470,9 @@ static int zlog_conf_parse_global_section(zlog_conf_t * a_conf, char *line)
 	}
 
 	nread = 0;
+	word_1[0] = '\0';
+	word_2[0] = '\0';
+	word_3[0] = '\0';
 	nscan = sscanf(name, "%s%n%s%s", word_1, &nread, word_2, word_3);
 
 	if (STRCMP(word_1, ==, "strict") && STRCMP(word_2, ==, "init")) {
