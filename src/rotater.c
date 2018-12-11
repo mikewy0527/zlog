@@ -409,9 +409,6 @@ static int zlog_rotater_parse_archive_path(zlog_rotater_t * a_rotater)
 	/* no archive path is set */
 	if (!a_rotater->archive_path || a_rotater->archive_path[0] == '\0') {
 		len = strlen(a_rotater->base_path);
-//		len = strlen(a_rotater->base_path) - strlen("-lessnew.tmp");
-//		memcpy(a_rotater->glob_path, a_rotater->base_path, len);
-//		memcpy(a_rotater->glob_path + len, ".*", strlen(".*") + 1);
 		nwrite = snprintf(a_rotater->glob_path, sizeof(a_rotater->glob_path),
 					"%s.*", a_rotater->base_path);
 		if (nwrite < 0 || nwrite > sizeof(a_rotater->glob_path)) {
@@ -602,6 +599,8 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 		zc_error("stat [%s] fail, errno[%d]", base_path, errno);
 		goto exit;
 	}
+
+	zc_error("size: %ld, len: %ld", info.st_size, msg_len);
 
 	if (info.st_size + msg_len <= archive_max_size) {
 		/* file not so big,

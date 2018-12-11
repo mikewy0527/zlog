@@ -28,7 +28,7 @@ typedef struct zlog_buf_s {
 	size_t size_max;
 	size_t size_real;
 
-	char truncate_str[MAXLEN_PATH + 1];
+	char truncate_str[8 + 1];
 	size_t truncate_str_len;
 } zlog_buf_t;
 

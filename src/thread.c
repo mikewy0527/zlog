@@ -8,6 +8,7 @@
 
 #include <pthread.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "zc_defs.h"
 #include "event.h"
@@ -55,6 +56,14 @@ void zlog_thread_del(zlog_thread_t * a_thread)
 		zlog_buf_del(a_thread->pre_msg_buf);
 	if (a_thread->msg_buf)
 		zlog_buf_del(a_thread->msg_buf);
+
+	if (a_thread->pre_file_path)
+		free(a_thread->pre_file_path);
+
+	if (a_thread->fd) {
+		fsync(a_thread->fd);
+		close(a_thread->fd);
+	}
 
 	free(a_thread);
 	zc_debug("zlog_thread_del[%p]", a_thread);

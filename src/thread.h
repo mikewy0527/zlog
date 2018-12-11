@@ -24,6 +24,9 @@ typedef struct {
 	zlog_buf_t *archive_path_buf;
 	zlog_buf_t *pre_msg_buf;
 	zlog_buf_t *msg_buf;
+
+	char *pre_file_path;
+	int fd;
 } zlog_thread_t;
 
 
