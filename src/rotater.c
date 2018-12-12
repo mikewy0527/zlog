@@ -315,11 +315,11 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater,
 	zlog_file_t *a_file;
 	int fd;
 
-	memcpy(old_path, a_rotater->glob_path, a_rotater->num_start_len);
 	memcpy(new_path, a_rotater->glob_path, a_rotater->num_start_len);
 
 	/* now in the list, aa.0 aa.1 aa.2 aa.02... */
 	if (a_rotater->files) {
+		memcpy(old_path, a_rotater->glob_path, a_rotater->num_start_len);
 		for (i = zc_arraylist_len(a_rotater->files) - 1; i > -1; i--) {
 			a_file = zc_arraylist_get(a_rotater->files, i);
 			if (!a_file) {
@@ -416,7 +416,7 @@ static int zlog_rotater_parse_archive_path(zlog_rotater_t * a_rotater)
 			return -1;
 		}
 
-		a_rotater->mv_type = SEQUENCE;
+		a_rotater->mv_type = ROLLING;
 		a_rotater->num_width = 0;
 		a_rotater->num_start_len = len + 1;
 		a_rotater->num_end_len = len + 2;
@@ -599,8 +599,6 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 		zc_error("stat [%s] fail, errno[%d]", base_path, errno);
 		goto exit;
 	}
-
-	zc_error("size: %ld, len: %ld", info.st_size, msg_len);
 
 	if (info.st_size + msg_len <= archive_max_size) {
 		/* file not so big,

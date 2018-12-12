@@ -26,6 +26,7 @@ typedef struct zlog_rotater_s {
 	int mv_type;				/* ROLLING or SEQUENCE */
 	int max_count;
 	zc_arraylist_t *files;
+	volatile char is_rotating;
 } zlog_rotater_t;
 
 zlog_rotater_t *zlog_rotater_new(char *lock_file);

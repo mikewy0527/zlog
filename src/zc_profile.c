@@ -15,19 +15,34 @@
 #include <stdarg.h>
 #include <time.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 
 #include "zc_profile.h"
 #include "zc_xplatform.h"
 
 static void zc_time(char *time_str, size_t time_str_size)
 {
-	time_t tt;
+	time_t t_sec;
+	time_t t_microsec;
 	struct tm local_time;
+	struct timeval tv;
+	int len;
 
-	time(&tt);
-	localtime_r(&tt, &local_time);
+	if (gettimeofday(&tv, NULL) == 0) {
+		t_sec = tv.tv_sec;
+		t_microsec = tv.tv_usec / 1000;
+	} else {
+		t_sec = time(NULL);
+		t_microsec = 0;
+	}
+
+	localtime_r(&t_sec, &local_time);
 	strftime(time_str, time_str_size, "%m-%d %T", &local_time);
+	len = strlen(time_str);
+	snprintf(time_str + len, time_str_size - len, ".%03ld (%lu)",
+			t_microsec, syscall(SYS_gettid));
 
 	return;
 }
@@ -35,7 +50,7 @@ static void zc_time(char *time_str, size_t time_str_size)
 int zc_profile_inner(int flag, const char *file, const long line, const char *fmt, ...)
 {
 	va_list args;
-	char time_str[20 + 1];
+	char time_str[32 + 1];
 	FILE *fp = NULL;
 
 	static char *debug_log = NULL;
