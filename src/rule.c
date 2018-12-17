@@ -772,6 +772,8 @@ zlog_rule_t *zlog_rule_new(char *line,
 		zc_arraylist_t * formats,
 		unsigned int file_perms,
 		size_t fsync_period,
+		long logfile_maxbytes,
+		int logfile_backups,
 		int * time_cache_count)
 {
 	int rc = 0;
@@ -803,6 +805,8 @@ zlog_rule_t *zlog_rule_new(char *line,
 
 	a_rule->file_perms = file_perms;
 	a_rule->fsync_period = fsync_period;
+	a_rule->archive_max_size = logfile_maxbytes;
+	a_rule->archive_max_count = logfile_backups;
 
 	/* line         [f.INFO "%H/log/aa.log", 20MB * 12; MyTemplate]
 	 * selector     [f.INFO]

@@ -32,6 +32,9 @@
 #define ZLOG_CONF_DEFAULT_FILE_PERMS 0600
 #define ZLOG_CONF_DEFAULT_RELOAD_CONF_PERIOD 0
 #define ZLOG_CONF_DEFAULT_FSYNC_PERIOD 0
+#define ZLOG_CONF_DEFAULT_LOGFILE_MAX_BYTES (50 * 1024 * 1024)
+#define ZLOG_CONF_DEFAULT_LOGFILE_BACKUPS 10
+
 #define ZLOG_CONF_BACKUP_ROTATE_LOCK_FILE "/tmp/zlog.lock"
 /*******************************************************************************/
 
@@ -55,6 +58,8 @@ void zlog_conf_profile(zlog_conf_t * a_conf, int flag)
 	zc_profile(flag, "---file perms[0%o]---", a_conf->file_perms);
 	zc_profile(flag, "---reload conf period[%ld]---", a_conf->reload_conf_period);
 	zc_profile(flag, "---fsync period[%ld]---", a_conf->fsync_period);
+	zc_profile(flag, "---logfile maxbytes[%ld]---", a_conf->logfile_max_bytes);
+	zc_profile(flag, "---logfile backups[%d]---", a_conf->logfile_backups);
 
 	zc_profile(flag, "---rotate lock file[%s]---", a_conf->rotate_lock_file);
 	if (a_conf->rotater) zlog_rotater_profile(a_conf->rotater, flag);
@@ -135,6 +140,9 @@ zlog_conf_t *zlog_conf_new(const char *confpath)
 	a_conf->file_perms = ZLOG_CONF_DEFAULT_FILE_PERMS;
 	a_conf->reload_conf_period = ZLOG_CONF_DEFAULT_RELOAD_CONF_PERIOD;
 	a_conf->fsync_period = ZLOG_CONF_DEFAULT_FSYNC_PERIOD;
+
+	a_conf->logfile_max_bytes = ZLOG_CONF_DEFAULT_LOGFILE_MAX_BYTES;
+	a_conf->logfile_backups = ZLOG_CONF_DEFAULT_LOGFILE_BACKUPS;
 	/* set default configuration end */
 
 	a_conf->levels = zlog_level_list_new(ARRAY_LIST_DEFAULT_SIZE);
@@ -203,6 +211,8 @@ static int zlog_conf_build_without_file(zlog_conf_t * a_conf)
 			a_conf->formats,
 			a_conf->file_perms,
 			a_conf->fsync_period,
+			ZLOG_CONF_DEFAULT_LOGFILE_MAX_BYTES,
+			ZLOG_CONF_DEFAULT_LOGFILE_BACKUPS,
 			&(a_conf->time_cache_count));
 	if (!default_rule) {
 		zc_error("zlog_rule_new fail");
@@ -429,6 +439,8 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 			a_conf->formats,
 			a_conf->file_perms,
 			a_conf->fsync_period,
+			a_conf->logfile_max_bytes,
+			a_conf->logfile_backups,
 			&(a_conf->time_cache_count));
 
 		if (!a_rule) {
@@ -512,9 +524,14 @@ static int zlog_conf_parse_global_section(zlog_conf_t * a_conf, char *line)
 		a_conf->reload_conf_period = zc_parse_byte_size(value);
 	} else if (STRCMP(word_1, ==, "fsync") && STRCMP(word_2, ==, "period")) {
 		a_conf->fsync_period = zc_parse_byte_size(value);
+	} else if (STRCMP(word_1, ==, "logfile") && STRCMP(word_2, ==, "maxbytes")) {
+		a_conf->logfile_max_bytes = zc_parse_byte_size(value);
+	} else if (STRCMP(word_1, ==, "logfile") && STRCMP(word_2, ==, "backups")) {
+		sscanf(value, "%d", &(a_conf->logfile_backups));
 	} else {
 		zc_error("name[%s] is not any one of global options", name);
-		if (a_conf->strict_init) return -1;
+		if (a_conf->strict_init)
+			return -1;
 	}
 
 	return 0;

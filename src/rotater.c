@@ -328,11 +328,10 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater,
 	memcpy(old_path, a_rotater->glob_path, a_rotater->num_start_len);
 	memcpy(new_path, a_rotater->glob_path, a_rotater->num_start_len);
 
-	zc_error("begin mv file");
 	/* now in the list, aa.0 aa.1 aa.2 aa.02... */
 	if (a_rotater->files) {
 		max_idx = zc_arraylist_len(a_rotater->files);
-		if (max_idx > a_rotater->max_count - 1) {
+		if (a_rotater->max_count > 0 && max_idx > a_rotater->max_count - 1) {
 			max_idx = a_rotater->max_count - 1;
 		}
 
@@ -401,7 +400,7 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater,
 	dup2(fd, *orig_fd);
 	close(fd);
 
-	if (a_rotater->files) {
+	if (a_rotater->files && a_rotater->max_count > 0) {
 		for (i = zc_arraylist_len(a_rotater->files) - 1; i > max_idx; i--) {
 			a_file = zc_arraylist_get(a_rotater->files, i);
 			if (!a_file) {
@@ -427,7 +426,6 @@ static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater,
 			}
 		}
 	}
-	zc_error("end mv file");
 
 	return 0;
 }

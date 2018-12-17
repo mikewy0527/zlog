@@ -76,6 +76,8 @@ zlog_rule_t *zlog_rule_new(char * line,
 		zc_arraylist_t * formats,
 		unsigned int file_perms,
 		size_t fsync_period,
+		long logfile_maxbytes,
+		int logfile_backups,
 		int * time_cache_count);
 
 void zlog_rule_del(zlog_rule_t * a_rule);
