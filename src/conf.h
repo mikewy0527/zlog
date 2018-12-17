@@ -31,8 +31,8 @@ typedef struct zlog_conf_s {
 	size_t fsync_period;
 	size_t reload_conf_period;
 
-	long logfile_max_bytes;
-	int logfile_backups;
+	long archive_max_size;
+	int archive_max_count;
 
 	zc_arraylist_t *levels;
 	zc_arraylist_t *formats;
