@@ -15,6 +15,7 @@ typedef struct zlog_rotater_s {
 	pthread_mutex_t lock_mutex;
 	char *lock_file;
 	int lock_fd;
+	char is_rotating;
 
 	/* single-use members */
 	char *base_path;			/* aa.log */
@@ -26,7 +27,6 @@ typedef struct zlog_rotater_s {
 	int mv_type;				/* ROLLING or SEQUENCE */
 	int max_count;
 	zc_arraylist_t *files;
-	volatile char is_rotating;
 } zlog_rotater_t;
 
 zlog_rotater_t *zlog_rotater_new(char *lock_file);

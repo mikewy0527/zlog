@@ -189,6 +189,10 @@ static int zlog_rule_output_static_file_rotate(zlog_rule_t * a_rule, zlog_thread
 		return 0;
 	}
 
+	if (zlog_env_conf->rotater->is_rotating == '1') {
+		return 0;
+	}
+
 	if (stat(a_rule->file_path, &info)) {
 		zc_warn("stat [%s] fail, errno[%d], maybe in rotating", a_rule->file_path, errno);
 		return 0;
@@ -986,11 +990,6 @@ zlog_rule_t *zlog_rule_new(char *line,
 				if ( (p == NULL) ||
 					((strchr(p, 'r') == NULL) && (strchr(p, 's') == NULL))) {
 					zc_error("archive_path must contain #r or #s");
-					goto err;
-				}
-
-				if (strlen(a_rule->archive_path) <= 2) {
-					zc_error("archive_path is not a valid path");
 					goto err;
 				}
 			}
