@@ -788,7 +788,7 @@ zlog_rule_t *zlog_rule_new(char *line,
 	char *output;
 	char format_name[MAXLEN_CFG_NAME + 1];
 	char file_path[MAXLEN_PATH + 1];
-	char archive_max_size[MAXLEN_CFG_NAME + 1];
+	char str_max_size[MAXLEN_CFG_NAME + 1];
 	char *file_limit;
 
 	char *p;
@@ -974,9 +974,9 @@ zlog_rule_t *zlog_rule_new(char *line,
 
 		if (file_limit) {
 			nscan = sscanf(file_limit, " %[0-9MmKkBb] * %d ~",
-					archive_max_size, &(a_rule->archive_max_count));
+					str_max_size, &(a_rule->archive_max_count));
 			if (nscan) {
-				a_rule->archive_max_size = zc_parse_byte_size(archive_max_size);
+				a_rule->archive_max_size = zc_parse_byte_size(str_max_size);
 			}
 
 			p = strchr(file_limit, '"');

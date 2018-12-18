@@ -58,8 +58,8 @@ void zlog_conf_profile(zlog_conf_t * a_conf, int flag)
 	zc_profile(flag, "---file perms[0%o]---", a_conf->file_perms);
 	zc_profile(flag, "---reload conf period[%ld]---", a_conf->reload_conf_period);
 	zc_profile(flag, "---fsync period[%ld]---", a_conf->fsync_period);
-	zc_profile(flag, "---logfile maxbytes[%ld]---", a_conf->archive_max_size);
-	zc_profile(flag, "---logfile backups[%d]---", a_conf->archive_max_count);
+	zc_profile(flag, "---default archive maxbytes[%ld]---", a_conf->archive_max_size);
+	zc_profile(flag, "---default archive maxcount[%d]---", a_conf->archive_max_count);
 
 	zc_profile(flag, "---rotate lock file[%s]---", a_conf->rotate_lock_file);
 	if (a_conf->rotater) zlog_rotater_profile(a_conf->rotater, flag);
@@ -524,9 +524,11 @@ static int zlog_conf_parse_global_section(zlog_conf_t * a_conf, char *line)
 		a_conf->reload_conf_period = zc_parse_byte_size(value);
 	} else if (STRCMP(word_1, ==, "fsync") && STRCMP(word_2, ==, "period")) {
 		a_conf->fsync_period = zc_parse_byte_size(value);
-	} else if (STRCMP(word_1, ==, "logfile") && STRCMP(word_2, ==, "maxbytes")) {
+	} else if (STRCMP(word_1, ==, "default") && STRCMP(word_2, ==, "archive")
+			&& STRCMP(word_3, ==, "maxbytes")) {
 		a_conf->archive_max_size = zc_parse_byte_size(value);
-	} else if (STRCMP(word_1, ==, "logfile") && STRCMP(word_2, ==, "backups")) {
+	} else if (STRCMP(word_1, ==, "default") && STRCMP(word_2, ==, "archive")
+			&& STRCMP(word_3, ==, "maxcount")) {
 		sscanf(value, "%d", &(a_conf->archive_max_count));
 	} else {
 		zc_error("name[%s] is not any one of global options", name);
