@@ -67,6 +67,8 @@ static int zlog_spec_write_time(zlog_spec_t * a_spec, zlog_thread_t * a_thread, 
 	if (a_cache->sec != now_sec) {
 		a_cache->len = strftime(a_cache->str, sizeof(a_cache->str), a_spec->time_fmt, time_local);
 		a_cache->sec = now_sec;
+
+		a_thread->cur_time_str = a_cache->str;
 	}
 
 	return zlog_buf_append(a_buf, a_cache->str, a_cache->len);
@@ -123,6 +125,8 @@ static int zlog_spec_write_mdc(zlog_spec_t * a_spec, zlog_thread_t * a_thread, z
 		zc_error("zlog_mdc_get_kv key[%s] fail", a_spec->mdc_key);
 		return 0;
 	}
+
+	a_thread->cur_mdc_kv = a_mdc_kv;
 
 	return zlog_buf_append(a_buf, a_mdc_kv->value, a_mdc_kv->value_len);
 }
@@ -196,6 +200,7 @@ static int zlog_spec_write_percent(zlog_spec_t * a_spec, zlog_thread_t * a_threa
 static int zlog_spec_write_pid(zlog_spec_t * a_spec, zlog_thread_t * a_thread, zlog_buf_t * a_buf)
 {
 	/* 1st in event lifecycle */
+	zc_debug("call zlog_spec_write_pid()");
 	if (!a_thread->event->pid) {
 		a_thread->event->pid = getpid();
 
@@ -461,7 +466,8 @@ void zlog_spec_del(zlog_spec_t * a_spec)
  * a const string: /home/bb
  * a string begin with %: %12.35d(%F %X,%l)
  */
-zlog_spec_t *zlog_spec_new(char *pattern_start, char **pattern_next, int *time_cache_count)
+zlog_spec_t *zlog_spec_new(char *pattern_start, char **pattern_next,
+						   int *time_cache_count, int *path_spec_flag)
 {
 	char *p;
 	int nscan = 0;
@@ -532,6 +538,7 @@ zlog_spec_t *zlog_spec_new(char *pattern_start, char **pattern_next, int *time_c
 			(*time_cache_count)++;
 			a_spec->write_buf = zlog_spec_write_time;
 
+			*path_spec_flag |= PATH_USE_DATE;
 			*pattern_next = p;
 			a_spec->len = p - a_spec->str;
 			break;
@@ -552,6 +559,7 @@ zlog_spec_t *zlog_spec_new(char *pattern_start, char **pattern_next, int *time_c
 				goto err;
 			}
 
+			*path_spec_flag |= PATH_USE_MDC;
 			*pattern_next = p;
 			a_spec->len = p - a_spec->str;
 			a_spec->write_buf = zlog_spec_write_mdc;
@@ -584,6 +592,7 @@ zlog_spec_t *zlog_spec_new(char *pattern_start, char **pattern_next, int *time_c
 			a_spec->time_cache_index = *time_cache_count;
 			(*time_cache_count)++;
 			a_spec->write_buf = zlog_spec_write_time;
+			*path_spec_flag |= PATH_USE_DATE;
 			break;
 		case 'F':
 			a_spec->write_buf = zlog_spec_write_srcfile;
@@ -605,24 +614,30 @@ zlog_spec_t *zlog_spec_new(char *pattern_start, char **pattern_next, int *time_c
 			break;
 		case 'p':
 			a_spec->write_buf = zlog_spec_write_pid;
+			*path_spec_flag |= PATH_USE_PID;
 			break;
 		case 'U':
 			a_spec->write_buf = zlog_spec_write_srcfunc;
 			break;
 		case 'v':
 			a_spec->write_buf = zlog_spec_write_level_lowercase;
+			*path_spec_flag |= PATH_USE_LEVEL;
 			break;
 		case 'V':
 			a_spec->write_buf = zlog_spec_write_level_uppercase;
+			*path_spec_flag |= PATH_USE_LEVEL;
 			break;
 		case 't':
 			a_spec->write_buf = zlog_spec_write_tid_hex;
+			*path_spec_flag |= PATH_USE_TID;
 			break;
 		case 'T':
 			a_spec->write_buf = zlog_spec_write_tid_long;
+			*path_spec_flag |= PATH_USE_TID;
 			break;
 		case 'K':
 			a_spec->write_buf = zlog_spec_write_ktid_long;
+			*path_spec_flag |= PATH_USE_TID;
 			break;
 		case '%':
 			a_spec->write_buf = zlog_spec_write_percent;

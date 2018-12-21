@@ -27,6 +27,9 @@ typedef struct {
 
 	char *pre_file_path;
 	int fd;
+	int date_changed;
+	zlog_mdc_kv_t *cur_mdc_kv;
+	char *cur_time_str;
 } zlog_thread_t;
 
 

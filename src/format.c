@@ -63,6 +63,7 @@ zlog_format_t *zlog_format_new(char *line, int * time_cache_count)
 	char *q;
 	zlog_spec_t *a_spec;
 	char tmp_pattern[MAXLEN_PATH + 1];
+	int use_tid;
 
 	zc_assert(line, NULL);
 
@@ -123,7 +124,7 @@ zlog_format_t *zlog_format_new(char *line, int * time_cache_count)
 	}
 
 	for (p = a_format->pattern; *p != '\0'; p = q) {
-		a_spec = zlog_spec_new(p, &q, time_cache_count);
+		a_spec = zlog_spec_new(p, &q, time_cache_count, &(use_tid));
 		if (!a_spec) {
 			zc_error("zlog_spec_new fail");
 			goto err;

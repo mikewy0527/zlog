@@ -24,6 +24,14 @@ typedef int (*zlog_spec_write_fn) (zlog_spec_t * a_spec,
 typedef int (*zlog_spec_gen_fn) (zlog_spec_t * a_spec,
 				zlog_thread_t * a_thread);
 
+enum {
+	PATH_USE_DATE = 0x01,
+	PATH_USE_TID = 0x02,
+	PATH_USE_PID = 0x04,
+	PATH_USE_MDC = 0x08,
+	PATH_USE_LEVEL = 0x10
+};
+
 struct zlog_spec_s {
 	char *str;
 	int len;
@@ -43,7 +51,8 @@ struct zlog_spec_s {
 	zlog_spec_gen_fn gen_archive_path;
 };
 
-zlog_spec_t *zlog_spec_new(char *pattern_start, char **pattern_end, int * time_cache_count);
+zlog_spec_t *zlog_spec_new(char *pattern_start, char **pattern_end,
+						   int * time_cache_count, int *path_spec_flag);
 void zlog_spec_del(zlog_spec_t * a_spec);
 void zlog_spec_profile(zlog_spec_t * a_spec, int flag);
 

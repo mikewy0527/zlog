@@ -183,6 +183,7 @@ int zlog_thread_rebuild_event(zlog_thread_t * a_thread, int time_cache_count)
 
 	zlog_event_del(a_thread->event);
 	a_thread->event = event_new;
+	a_thread->cur_time_str = NULL;
 	return 0;
 err:
 	if (event_new) zlog_event_del(event_new);
