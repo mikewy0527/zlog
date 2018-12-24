@@ -136,7 +136,7 @@ int zlog_level_list_atoi(zc_arraylist_t *levels, char *str)
 
 	zc_arraylist_foreach(levels, i, a_level) {
 		if (STRICMP(str, ==, a_level->str_uppercase)) {
-			return i;
+			return a_level->int_level;
 		}
 	}
 

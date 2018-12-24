@@ -74,20 +74,65 @@ void zlog_rule_profile(zlog_rule_t * a_rule, int flag)
 }
 
 /*******************************************************************************/
-
-static int zlog_rule_output_static_file_single(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
+static int zlog_rule_lock(pthread_mutex_t *lock_mutex)
 {
+	int rc;
+
+	if (!lock_mutex)
+		return 0;
+
+	rc = pthread_mutex_lock(lock_mutex);
+	if (rc == EBUSY) {
+		zc_warn("pthread_mutex_trylock fail, as lock_mutex is locked by other threads");
+		return -1;
+	} else if (rc != 0) {
+		zc_error("pthread_mutex_trylock fail, rc[%d]", rc);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int zlog_rule_trylock(pthread_mutex_t *lock_mutex)
+{
+	int rc;
+
+	if (!lock_mutex)
+		return 0;
+
+	rc = pthread_mutex_trylock(lock_mutex);
+	if (rc == EBUSY) {
+		zc_warn("pthread_mutex_trylock fail, as lock_mutex is locked by other threads");
+		return -1;
+	} else if (rc != 0) {
+		zc_error("pthread_mutex_trylock fail, rc[%d]", rc);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int zlog_rule_unlock(pthread_mutex_t *lock_mutex)
+{
+	if (!lock_mutex)
+		return 0;
+
+	if (pthread_mutex_unlock(lock_mutex)) {
+		zc_error("pthread_mutext_unlock fail, errno[%d]", errno);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int zlog_rule_check_reopen_static_file(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
+{
+	int rc = 0;
 	int fd;
 	struct stat stb;
 	int do_file_reload = 0;
 	int redo_inode_stat = 0;
 
-	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
-		zc_error("zlog_format_gen_msg fail");
-		return -1;
-	}
-
-	/* check if the output file was changed by an external tool by comparing the inode to our saved off one */
 	if (stat(a_rule->file_path, &stb)) {
 		if (errno != ENOENT) {
 			zc_error("stat fail on [%s], errno[%d]", a_rule->file_path, errno);
@@ -100,27 +145,67 @@ static int zlog_rule_output_static_file_single(zlog_rule_t * a_rule, zlog_thread
 		do_file_reload = (stb.st_ino != a_rule->static_ino || stb.st_dev != a_rule->static_dev);
 	}
 
-	if (do_file_reload) {
-		fd = open(a_rule->file_path,
-			O_WRONLY | O_APPEND | O_CREAT | a_rule->file_open_flags,
-			a_rule->file_perms);
-		if (fd < 0) {
-			zc_error("open file[%s] fail, errno[%d]", a_rule->file_path, errno);
-			return -1;
-		}
+	if (!do_file_reload) {
+		return 0;
+	}
 
-		dup2(fd, a_rule->static_fd);
-		close(fd);
+	if (a_rule->is_reopening) {
+		return 0;
+	}
 
-		/* save off the new dev/inode info from the stat call we already did */
-		if (redo_inode_stat) {
-			if (stat(a_rule->file_path, &stb)) {
-				zc_error("stat fail on new file[%s], errno[%d]", a_rule->file_path, errno);
-				return -1;
-			}
+	if (zlog_rule_trylock(&(a_rule->lock_mutex))) {
+		zc_warn("zlog_rule_trylock fail, maybe lock by other process or threads");
+		return 0;
+	}
+
+	a_rule->is_reopening = 1;
+
+	fd = open(a_rule->file_path,
+		O_WRONLY | O_APPEND | O_CREAT | a_rule->file_open_flags,
+		a_rule->file_perms);
+	if (fd < 0) {
+		zc_error("open file[%s] fail, errno[%d]", a_rule->file_path, errno);
+		rc = -1;
+		goto err;
+	}
+
+	dup2(fd, a_rule->static_fd);
+	close(fd);
+
+	/* save off the new dev/inode info from the stat call we already did */
+	if (redo_inode_stat) {
+		if (stat(a_rule->file_path, &stb)) {
+			zc_error("stat fail on new file[%s], errno[%d]", a_rule->file_path, errno);
+			rc = -1;
+			goto err;
 		}
-		a_rule->static_dev = stb.st_dev;
-		a_rule->static_ino = stb.st_ino;
+	}
+	a_rule->static_dev = stb.st_dev;
+	a_rule->static_ino = stb.st_ino;
+
+err:
+	a_rule->is_reopening = 0;
+
+	if (zlog_rule_unlock(&(a_rule->lock_mutex))) {
+		zc_error("zlog_rule_unlock fail");
+	}
+
+	return rc;
+}
+
+static int zlog_rule_output_static_file_single(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
+{
+	/* check if the output file was changed by an external tool by comparing the
+	 * inode to our saved off one
+	 */
+	if (zlog_rule_check_reopen_static_file(a_rule, a_thread)) {
+		zc_error("zlog_rule_check_reopen_static_file failed");
+		return -1;
+	}
+
+	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
+		zc_error("zlog_format_gen_msg fail");
+		return -1;
 	}
 
 	if (write(a_rule->static_fd,
@@ -236,50 +321,14 @@ static int zlog_rule_output_static_file_rotate(zlog_rule_t * a_rule, zlog_thread
 	zlog_buf_seal(a_thread->path_buf);    \
 } while(0)
 
-#if 1
-static int zlog_rule_lock(pthread_mutex_t *lock_mutex)
-{
-	int rc;
-
-	if (!lock_mutex)
-		return 0;
-
-	rc = pthread_mutex_lock(lock_mutex);
-	if (rc == EBUSY) {
-		zc_warn("pthread_mutex_trylock fail, as lock_mutex is locked by other threads");
-		return -1;
-	} else if (rc != 0) {
-		zc_error("pthread_mutex_trylock fail, rc[%d]", rc);
-		return -1;
-	}
-
-	return 0;
-}
-
-static int zlog_rule_unlock(pthread_mutex_t *lock_mutex)
-{
-	if (!lock_mutex)
-		return 0;
-
-	if (pthread_mutex_unlock(lock_mutex)) {
-		zc_error("pthread_mutext_unlock fail, errno[%d]", errno);
-		return -1;
-	}
-
-	return 0;
-}
-
 static int zlog_rule_init_fname_fds_table(pthread_mutex_t *lock_mutex,
 										  int path_spec_flag,
 										  zc_arraylist_t **fname_fds)
 {
 	int i;
+	zc_arraylist_t *tmp_fds = NULL;
 	zlog_fname_fd_t *a_fname_fd = NULL;
 	zlog_level_t *a_level;
-
-	if (*fname_fds) {
-		return 0;
-	}
 
 	if (zlog_rule_lock(lock_mutex)) {
 		zc_warn("zlog_rule_lock fail, maybe lock by other process or threads");
@@ -290,13 +339,14 @@ static int zlog_rule_init_fname_fds_table(pthread_mutex_t *lock_mutex,
 		goto exit;
 	}
 
-	*fname_fds = zc_arraylist_new((zc_arraylist_del_fn) zlog_fname_fd_del,
+	tmp_fds = zc_arraylist_new((zc_arraylist_del_fn) zlog_fname_fd_del,
 		zc_arraylist_len(zlog_env_conf->levels));
-	if (!(*fname_fds)) {
+	if (!tmp_fds) {
 		zc_error("zc_arraylist_new fail");
 		goto err;
 	}
 
+	/* create de default fname_fd map for no mdc config */
 	if (path_spec_flag & PATH_USE_LEVEL) {
 		zc_arraylist_foreach(zlog_env_conf->levels, i, a_level) {
 			a_fname_fd = zlog_fname_fd_new();
@@ -306,9 +356,9 @@ static int zlog_rule_init_fname_fds_table(pthread_mutex_t *lock_mutex,
 			}
 
 			a_fname_fd->level = a_level->int_level;
-			a_fname_fd->mdc[0] = '\0';
+			memcpy(a_fname_fd->mdc, "", strlen("") + 1);
 
-			if (zc_arraylist_add(*fname_fds, a_fname_fd)) {
+			if (zc_arraylist_add(tmp_fds, a_fname_fd)) {
 				zc_error("zc_arraylist_set fail");
 				goto err;
 			}
@@ -320,13 +370,15 @@ static int zlog_rule_init_fname_fds_table(pthread_mutex_t *lock_mutex,
 			goto err;
 		}
 
-		a_fname_fd->mdc[0] = '\0';
+		memcpy(a_fname_fd->mdc, "", strlen("") + 1);
 
-		if (zc_arraylist_add(*fname_fds, a_fname_fd)) {
+		if (zc_arraylist_add(tmp_fds, a_fname_fd)) {
 			zc_error("zc_arraylist_set fail");
 			goto err;
 		}
 	}
+
+	*fname_fds = tmp_fds;
 
 exit:
 	if (zlog_rule_unlock(lock_mutex)) {
@@ -338,8 +390,7 @@ err:
 	if (a_fname_fd)
 		zlog_fname_fd_del(a_fname_fd);
 
-	zc_arraylist_del(*fname_fds);
-	*fname_fds = NULL;
+	zc_arraylist_del(tmp_fds);
 
 	if (zlog_rule_unlock(lock_mutex)) {
 		zc_error("zlog_rule_unlock fail");
@@ -350,7 +401,9 @@ err:
 
 static int zlog_rule_fname_fds_table_add(pthread_mutex_t *lock_mutex,
 										 zc_arraylist_t *fname_fds,
-										 zlog_fname_fd_t * a_fname_fd)
+										 int level,
+										 const char *mdc,
+										 zlog_fname_fd_t **a_fname_fd)
 {
 	int rc = 0;
 	int i;
@@ -362,19 +415,34 @@ static int zlog_rule_fname_fds_table_add(pthread_mutex_t *lock_mutex,
 	}
 
 	zc_arraylist_foreach(fname_fds, i, tmp_fname_fd) {
-		if (a_fname_fd->level == tmp_fname_fd->level
-			&& STRCMP(a_fname_fd->mdc, ==, tmp_fname_fd->mdc)) {
+		if (level == tmp_fname_fd->level
+			&& STRCMP(mdc, ==, tmp_fname_fd->mdc)) {
 			break;
 		}
 	}
 
 	if (i >= zc_arraylist_len(fname_fds)) {
-		if (zc_arraylist_add(fname_fds, a_fname_fd)) {
-			zc_error("zc_arraylist_set fail");
+		tmp_fname_fd = zlog_fname_fd_new();
+		if (!tmp_fname_fd) {
 			rc = -1;
+			zc_error("zlog_fname_fd_new failed");
+			goto err;
 		}
+
+		tmp_fname_fd->level = level;
+		memcpy(tmp_fname_fd->mdc, mdc, strlen(mdc) + 1);
+
+		if (zc_arraylist_add(fname_fds, tmp_fname_fd)) {
+			zc_error("zc_arraylist_set fail");
+			zlog_fname_fd_del(tmp_fname_fd);
+			rc = -1;
+			goto err;
+		}
+
+		*a_fname_fd = tmp_fname_fd;
 	}
 
+err:
 	if (zlog_rule_unlock(lock_mutex)) {
 		zc_error("zlog_rule_unlock fail");
 	}
@@ -403,17 +471,22 @@ static zlog_fname_fd_t * zlog_rule_check_filename(zlog_rule_t * a_rule,
 		level_matched = 0;
 		mdc_matched = 0;
 
-		if (a_rule->path_spec_flag & PATH_USE_LEVEL
-			&& a_rule->level != a_fname_fd->level) {
-			continue;
+		if (a_rule->path_spec_flag & PATH_USE_LEVEL) {
+			if (a_rule->level != a_fname_fd->level) {
+				continue;
+			}
 		}
 		level_matched = 1;
 
 		if (a_rule->path_spec_flag & PATH_USE_MDC) {
-			if (!a_thread->cur_mdc_kv
-				|| STRCMP(a_fname_fd->mdc, !=, a_thread->cur_mdc_kv->value)
-				|| STRCMP(a_fname_fd->mdc, !=, "")) {
-				continue;
+			if (!a_thread->cur_mdc_kv) {
+				if (STRCMP(a_fname_fd->mdc, !=, "")) {
+					continue;
+				}
+			} else {
+				if (STRCMP(a_fname_fd->mdc, !=, a_thread->cur_mdc_kv->value)) {
+					continue;
+				}
 			}
 		}
 		mdc_matched = 1;
@@ -428,9 +501,15 @@ static zlog_fname_fd_t * zlog_rule_check_filename(zlog_rule_t * a_rule,
 	}
 
 	if (!mdc_matched) {
-		a_fname_fd = zlog_fname_fd_new();
-		if (zlog_rule_fname_fds_table_add(lock_mutex, *fname_fds, a_fname_fd)) {
-			zlog_fname_fd_del(a_fname_fd);
+		if (!a_thread->cur_mdc_kv) {
+			zc_error("no mdc configed, and have no fname_fd map to write log");
+			return NULL;
+		}
+
+		/* need to add fname_fd map for current mdc */
+		a_fname_fd = NULL;
+		if (zlog_rule_fname_fds_table_add(lock_mutex, *fname_fds, a_rule->level,
+				a_thread->cur_mdc_kv->value, &a_fname_fd)) {
 			return NULL;
 		}
 	}
@@ -438,10 +517,10 @@ static zlog_fname_fd_t * zlog_rule_check_filename(zlog_rule_t * a_rule,
 	return a_fname_fd;
 }
 
-static int zlog_rule_open_logfile(zlog_rule_t * a_rule,
-								  zlog_thread_t * a_thread,
-								  zlog_fname_fd_t * a_fname_fd,
-								  pthread_mutex_t *lock_mutex)
+static int zlog_rule_openfile_in_lock(zlog_rule_t * a_rule,
+									  zlog_thread_t * a_thread,
+									  zlog_fname_fd_t * a_fname_fd,
+									  pthread_mutex_t *lock_mutex)
 {
 	int rc = 0;
 	char *path;
@@ -449,21 +528,64 @@ static int zlog_rule_open_logfile(zlog_rule_t * a_rule,
 
 	path = zlog_buf_str(a_thread->path_buf);
 
-	zc_debug("start open file: %s", path);
-
-	if (a_fname_fd->is_reopening && a_fname_fd->fd > 0) {
+	if (a_fname_fd->fd > 0) {
 		return 0;
 	}
 
 	if (zlog_rule_lock(lock_mutex)) {
-		zc_warn("zlog_rule_lock fail, maybe lock by other process or threads");
-		return 0;
+		zc_error("zlog_rule_lock fail");
+		return -1;
 	}
 
-	if (a_fname_fd->is_reopening) {
+	if (a_fname_fd->fd > 0) {
 		rc = 0;
 		goto exit;
 	}
+
+	fd = open(path,
+			a_rule->file_open_flags | O_WRONLY | O_APPEND | O_CREAT,
+			a_rule->file_perms);
+	if (fd < 0) {
+		zc_error("open file[%s] fail, errno[%d]", path, errno);
+		rc = -1;
+		goto exit;
+	}
+
+	a_fname_fd->fd = fd;
+
+	if (a_thread->cur_time_str) {
+		memcpy(a_fname_fd->time_str, a_thread->cur_time_str,
+				strlen(a_thread->cur_time_str) + 1);
+	}
+
+exit:
+	if (zlog_rule_unlock(lock_mutex)) {
+		zc_error("zlog_rule_unlock fail");
+	}
+
+	return rc;
+}
+
+static int zlog_rule_openfile_in_trylock(zlog_rule_t * a_rule,
+										 zlog_thread_t * a_thread,
+										 zlog_fname_fd_t * a_fname_fd,
+										 pthread_mutex_t *lock_mutex)
+{
+	int rc = 0;
+	char *path;
+	int fd;
+
+	path = zlog_buf_str(a_thread->path_buf);
+
+	if (a_fname_fd->is_reopening) {
+		return 0;
+	}
+
+	if (zlog_rule_trylock(lock_mutex)) {
+		zc_warn("zlog_rule_trylock fail, maybe lock by other process or threads");
+		return 0;
+	}
+
 	a_fname_fd->is_reopening = 1;
 
 	fd = open(path,
@@ -475,13 +597,8 @@ static int zlog_rule_open_logfile(zlog_rule_t * a_rule,
 		goto err;
 	}
 
-	if (a_fname_fd->fd <= 0) {
-		/* first time to open */
-		a_fname_fd->fd = fd;
-	} else {
-		dup2(fd, a_fname_fd->fd);
-		close(fd);
-	}
+	dup2(fd, a_fname_fd->fd);
+	close(fd);
 
 	if (a_thread->cur_time_str) {
 		memcpy(a_fname_fd->time_str, a_thread->cur_time_str,
@@ -491,7 +608,6 @@ static int zlog_rule_open_logfile(zlog_rule_t * a_rule,
 err:
 	a_fname_fd->is_reopening = 0;
 
-exit:
 	if (zlog_rule_unlock(lock_mutex)) {
 		zc_error("zlog_rule_unlock fail");
 	}
@@ -499,110 +615,14 @@ exit:
 	return rc;
 }
 
-//static int zlog_rule_log_with_tid(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
-//{
-//	int path_changed = 0;
-//	zlog_fname_fd_t *a_fname_fd;
-
-//	zlog_rule_gen_path(a_rule, a_thread);
-
-//	a_fname_fd = zlog_rule_check_filename(a_rule, a_thread, NULL,
-//										  &(a_rule->fname_fds));
-//	if (!a_fname_fd) {
-//		zc_error("zlog_rule_check_filename failed");
-//		return -1;
-//	}
-
-//	/* filename using date */
-//	if (a_rule->path_spec_flag & PATH_USE_DATE && a_thread->date_changed) {
-//		path_changed = (!a_thread->cur_time_str
-//				|| STRCMP(a_fname_fd->time_str, !=, a_thread->cur_time_str));
-//		a_thread->date_changed = 0;
-//	}
-
-//	if (a_fname_fd->fd <= 0 || path_changed) {
-//		if (zlog_rule_open_logfile(a_rule, a_thread, a_fname_fd, NULL)) {
-//			zc_error("zlog_rule_open_logfile failed");
-//			return -1;
-//		}
-//	}
-
-//	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
-//		zc_error("zlog_format_output fail");
-//		return -1;
-//	}
-
-//	if (write(a_fname_fd->fd, zlog_buf_str(a_thread->msg_buf),
-//			zlog_buf_len(a_thread->msg_buf)) < 0) {
-//		zc_error("write fail, errno[%d]", errno);
-//		return -1;
-//	}
-
-//	if (a_rule->fsync_period && ++a_rule->fsync_count >= a_rule->fsync_period) {
-//		a_rule->fsync_count = 0;
-//		if (fsync(a_fname_fd->fd))
-//			zc_error("fsync[%d] fail, errno[%d]", a_thread->fd, errno);
-//	}
-
-//	return 0;
-//}
-
-//static int zlog_rule_log_without_tid(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
-//{
-//	int path_changed = 0;
-//	zlog_fname_fd_t *a_fname_fd;
-
-//	zlog_rule_gen_path(a_rule, a_thread);
-
-//	a_fname_fd = zlog_rule_check_filename(a_rule, a_thread, &(a_rule->lock_mutex),
-//										  &(a_rule->fname_fds));
-//	if (!a_fname_fd) {
-//		zc_error("zlog_rule_check_filename failed");
-//		return -1;
-//	}
-
-//	/* filename using date */
-//	if (a_rule->path_spec_flag & PATH_USE_DATE && a_thread->date_changed) {
-//		path_changed = (!a_thread->cur_time_str
-//				|| STRCMP(a_fname_fd->time_str, !=, a_thread->cur_time_str));
-//		a_thread->date_changed = 0;
-//	}
-
-//	if (a_fname_fd->fd <= 0 || path_changed) {
-//		if (zlog_rule_open_logfile(a_rule, a_thread, a_fname_fd, &(a_rule->lock_mutex))) {
-//			zc_error("zlog_rule_open_logfile failed");
-//			return -1;
-//		}
-//	}
-
-//	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
-//		zc_error("zlog_format_output fail");
-//		return -1;
-//	}
-
-//	if (write(a_fname_fd->fd, zlog_buf_str(a_thread->msg_buf),
-//			zlog_buf_len(a_thread->msg_buf)) < 0) {
-//		zc_error("write fail, errno[%d]", errno);
-//		return -1;
-//	}
-
-//	if (a_rule->fsync_period && ++a_rule->fsync_count >= a_rule->fsync_period) {
-//		a_rule->fsync_count = 0;
-//		if (fsync(a_fname_fd->fd))
-//			zc_error("fsync[%d] fail, errno[%d]", a_thread->fd, errno);
-//	}
-
-//	return 0;
-//}
-
-static int zlog_rule_output_dynamic_file_single(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
+static zlog_fname_fd_t * zlog_rule_open_logfile(zlog_rule_t * a_rule,
+												zlog_thread_t * a_thread,
+												int *path_changed)
 {
-	int path_changed = 0;
+	int rc = 0;
 	zlog_fname_fd_t *a_fname_fd;
 	zc_arraylist_t **tmp_fds;
 	pthread_mutex_t *lock_mutex;
-
-	zlog_rule_gen_path(a_rule, a_thread);
 
 	if (a_rule->path_spec_flag & PATH_USE_TID) {
 		tmp_fds = &(a_thread->fname_fds);
@@ -612,24 +632,44 @@ static int zlog_rule_output_dynamic_file_single(zlog_rule_t * a_rule, zlog_threa
 		lock_mutex = &(a_rule->lock_mutex);
 	}
 
-	a_fname_fd = zlog_rule_check_filename(a_rule, a_thread, lock_mutex,
-										  tmp_fds);
+	a_fname_fd = zlog_rule_check_filename(a_rule, a_thread, lock_mutex, tmp_fds);
 	if (!a_fname_fd) {
 		zc_error("zlog_rule_check_filename failed");
-		return -1;
+		return NULL;
 	}
 
 	if (a_rule->path_spec_flag & PATH_USE_DATE && a_thread->date_changed) {
-		path_changed = (!a_thread->cur_time_str
+		/* TODO: change strftime to snprintf while getting date */
+		*path_changed = (!a_thread->cur_time_str
 				|| STRCMP(a_fname_fd->time_str, !=, a_thread->cur_time_str));
 		a_thread->date_changed = 0;
 	}
 
-	if (a_fname_fd->fd <= 0 || path_changed) {
-		if (zlog_rule_open_logfile(a_rule, a_thread, a_fname_fd, lock_mutex)) {
-			zc_error("zlog_rule_open_logfile failed");
-			return -1;
-		}
+	if (a_fname_fd->fd <= 0) {
+		rc = zlog_rule_openfile_in_lock(a_rule, a_thread, a_fname_fd, lock_mutex);
+	} else if (*path_changed) {
+		rc = zlog_rule_openfile_in_trylock(a_rule, a_thread, a_fname_fd, lock_mutex);
+	}
+
+	if (rc) {
+		zc_error("zlog_rule_open_logfile failed");
+		return NULL;
+	}
+
+	return a_fname_fd;
+}
+
+static int zlog_rule_output_dynamic_file_single(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
+{
+	int path_changed = 0;
+	zlog_fname_fd_t *a_fname_fd = NULL;
+
+	zlog_rule_gen_path(a_rule, a_thread);
+
+	a_fname_fd = zlog_rule_open_logfile(a_rule, a_thread, &path_changed);
+	if (!a_fname_fd) {
+		zc_error("zlog_rule_open_logfile failed");
+		return -1;
 	}
 
 	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
@@ -654,45 +694,19 @@ static int zlog_rule_output_dynamic_file_single(zlog_rule_t * a_rule, zlog_threa
 
 static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
 {
+	int path_changed = 0;
+	zlog_fname_fd_t *a_fname_fd = NULL;
+	zlog_rotater_t *a_rotater;
 	char *path;
 	size_t len;
 	struct zlog_stat info;
 
-	int path_changed = 0;
-	zlog_fname_fd_t *a_fname_fd;
-	zc_arraylist_t **tmp_fds;
-	pthread_mutex_t *lock_mutex;
-	zlog_rotater_t *a_rotater;
-
 	zlog_rule_gen_path(a_rule, a_thread);
 
-	if (a_rule->path_spec_flag & PATH_USE_TID) {
-		tmp_fds = &(a_thread->fname_fds);
-		lock_mutex = NULL;
-	} else {
-		tmp_fds = &(a_rule->fname_fds);
-		lock_mutex = &(a_rule->lock_mutex);
-	}
-
-	a_fname_fd = zlog_rule_check_filename(a_rule, a_thread, lock_mutex,
-										  tmp_fds);
+	a_fname_fd = zlog_rule_open_logfile(a_rule, a_thread, &path_changed);
 	if (!a_fname_fd) {
-		zc_error("zlog_rule_check_filename failed");
+		zc_error("zlog_rule_open_logfile failed");
 		return -1;
-	}
-
-	if (a_rule->path_spec_flag & PATH_USE_DATE && a_thread->date_changed) {
-		path_changed = (!a_thread->cur_time_str
-				|| STRCMP(a_fname_fd->time_str, !=, a_thread->cur_time_str));
-		a_thread->date_changed = 0;
-	}
-
-	if (a_fname_fd->fd <= 0 || path_changed) {
-		zc_error("path_changed: %d, a_fname_fd->fd: %d", path_changed, a_fname_fd->fd);
-		if (zlog_rule_open_logfile(a_rule, a_thread, a_fname_fd, lock_mutex)) {
-			zc_error("zlog_rule_open_logfile failed");
-			return -1;
-		}
 	}
 
 	path = zlog_buf_str(a_thread->path_buf);
@@ -764,116 +778,6 @@ static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_threa
 
 	return 0;
 }
-#else
-static int zlog_rule_output_dynamic_file_single(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
-{
-	int fd;
-
-	zlog_rule_gen_path(a_rule, a_thread);
-
-	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
-		zc_error("zlog_format_output fail");
-		return -1;
-	}
-
-	fd = open(zlog_buf_str(a_thread->path_buf),
-		a_rule->file_open_flags | O_WRONLY | O_APPEND | O_CREAT, a_rule->file_perms);
-	if (fd < 0) {
-		zc_error("open file[%s] fail, errno[%d]", zlog_buf_str(a_thread->path_buf), errno);
-		return -1;
-	}
-
-	if (write(fd, zlog_buf_str(a_thread->msg_buf), zlog_buf_len(a_thread->msg_buf)) < 0) {
-		zc_error("write fail, errno[%d]", errno);
-		close(fd);
-		return -1;
-	}
-
-	if (a_rule->fsync_period && ++a_rule->fsync_count >= a_rule->fsync_period) {
-		a_rule->fsync_count = 0;
-		if (fsync(fd)) zc_error("fsync[%d] fail, errno[%d]", fd, errno);
-	}
-
-	if (close(fd) < 0) {
-		zc_error("close fail, maybe cause by write, errno[%d]", errno);
-		return -1;
-	}
-
-	return 0;
-}
-
-static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
-{
-	int fd;
-	char *path;
-	size_t len;
-	struct zlog_stat info;
-
-	zlog_rule_gen_path(a_rule, a_thread);
-
-	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
-		zc_error("zlog_format_output fail");
-		return -1;
-	}
-
-	path = zlog_buf_str(a_thread->path_buf);
-	fd = open(path, a_rule->file_open_flags | O_WRONLY | O_APPEND | O_CREAT, a_rule->file_perms);
-	if (fd < 0) {
-		zc_error("open file[%s] fail, errno[%d]", zlog_buf_str(a_thread->path_buf), errno);
-		return -1;
-	}
-
-	len = zlog_buf_len(a_thread->msg_buf);
-	if (write(fd, zlog_buf_str(a_thread->msg_buf), len) < 0) {
-		zc_error("write fail, errno[%d]", errno);
-		close(fd);
-		return -1;
-	}
-
-	if (a_rule->fsync_period && ++a_rule->fsync_count >= a_rule->fsync_period) {
-		a_rule->fsync_count = 0;
-		if (fsync(fd)) zc_error("fsync[%d] fail, errno[%d]", fd, errno);
-	}
-
-	if (close(fd) < 0) {
-		zc_error("write fail, maybe cause by write, errno[%d]", errno);
-		return -1;
-	}
-
-	if (len> a_rule->archive_max_size) {
-		zc_debug("one msg's len[%ld] > archive_max_size[%ld], no rotate",
-			 (long)len, (long) a_rule->archive_max_size);
-		return 0;
-	}
-
-	if (stat(path, &info)) {
-		zc_warn("stat [%s] fail, errno[%d], maybe in rotating", path, errno);
-		return 0;
-	}
-
-	/* file not so big, return */
-	if (info.st_size + len <a_rule->archive_max_size) return 0;
-
-	if (zlog_env_conf->rotater->is_rotating == '1') {
-		return 0;
-	}
-	zlog_env_conf->rotater->is_rotating = '1';
-
-	if (zlog_rotater_rotate(zlog_env_conf->rotater,
-		path, len,
-		zlog_rule_gen_archive_path(a_rule, a_thread),
-		a_rule->archive_max_size, a_rule->archive_max_count,
-		a_rule->file_open_flags, a_rule->file_perms, &fd)
-		) {
-		zc_error("zlog_rotater_rotate fail");
-		zlog_env_conf->rotater->is_rotating = '0';
-		return -1;
-	} /* success or no rotation do nothing */
-	zlog_env_conf->rotater->is_rotating = '0';
-
-	return 0;
-}
-#endif
 
 static int zlog_rule_output_pipe(zlog_rule_t * a_rule, zlog_thread_t * a_thread)
 {

@@ -47,6 +47,7 @@ struct zlog_rule_s {
 	int static_fd;
 	dev_t static_dev;
 	ino_t static_ino;
+	int is_reopening;
 
 	pthread_mutex_t lock_mutex;
 //	int use_tid;
