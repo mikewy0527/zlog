@@ -58,67 +58,6 @@ void zlog_rotater_profile(zlog_rotater_t * a_rotater, int flag)
 }
 
 /*******************************************************************************/
-void zlog_rotater_del(zlog_rotater_t *a_rotater)
-{
-	zc_assert(a_rotater,);
-
-	if (a_rotater->lock_fd) {
-		if (close(a_rotater->lock_fd)) {
-			zc_error("close fail, errno[%d]", errno);
-		}
-	}
-
-	if (pthread_mutex_destroy(&(a_rotater->lock_mutex))) {
-		zc_error("pthread_mutex_destroy fail, errno[%d]", errno);
-	}
-
-	free(a_rotater);
-	zc_debug("zlog_rotater_del[%p]", a_rotater);
-	return;
-}
-
-zlog_rotater_t *zlog_rotater_new(char *lock_file)
-{
-	int fd = 0;
-	zlog_rotater_t *a_rotater;
-
-	zc_assert(lock_file, NULL);
-
-	a_rotater = calloc(1, sizeof(zlog_rotater_t));
-	if (!a_rotater) {
-		zc_error("calloc fail, errno[%d]", errno);
-		return NULL;
-	}
-
-	if (pthread_mutex_init(&(a_rotater->lock_mutex), NULL)) {
-		zc_error("pthread_mutex_init fail, errno[%d]", errno);
-		free(a_rotater);
-		return NULL;
-	}
-
-	/* depends on umask of the user here
-	 * if user A create /tmp/zlog.lock 0600
-	 * user B is unable to read /tmp/zlog.lock
-	 * B has to choose another lock file except /tmp/zlog.lock
-	 */
-	fd = open(lock_file, O_RDWR | O_CREAT,
-		  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-	if (fd < 0) {
-		zc_error("open file[%s] fail, errno[%d]", lock_file, errno);
-		goto err;
-	}
-
-	a_rotater->lock_fd = fd;
-	a_rotater->lock_file = lock_file;
-
-	//zlog_rotater_profile(a_rotater, ZC_DEBUG);
-	return a_rotater;
-err:
-	zlog_rotater_del(a_rotater);
-	return NULL;
-}
-
-/*******************************************************************************/
 
 static void zlog_file_del(zlog_file_t * a_file)
 {
@@ -517,8 +456,10 @@ static void zlog_rotater_clean(zlog_rotater_t *a_rotater)
 	a_rotater->num_start_len = 0;
 	a_rotater->num_end_len = 0;
 
-	if (a_rotater->files) zc_arraylist_del(a_rotater->files);
-	a_rotater->files = NULL;
+	if (a_rotater->files) {
+		zc_arraylist_del(a_rotater->files);
+		a_rotater->files = NULL;
+	}
 }
 
 static int zlog_rotater_lsmv(zlog_rotater_t *a_rotater,
@@ -569,6 +510,9 @@ static int zlog_rotater_trylock(zlog_rotater_t *a_rotater)
 	int rc;
 	struct flock fl;
 
+	if (!a_rotater->lock_file)
+		return 0;
+
 	fl.l_type = F_WRLCK;
 	fl.l_start = 0;
 	fl.l_whence = SEEK_SET;
@@ -582,11 +526,6 @@ static int zlog_rotater_trylock(zlog_rotater_t *a_rotater)
 		zc_error("pthread_mutex_trylock fail, rc[%d]", rc);
 		return -1;
 	}
-
-	if (a_rotater->is_rotating == '1') {
-		return -1;
-	}
-	a_rotater->is_rotating = '1';
 
 	if (fcntl(a_rotater->lock_fd, F_SETLK, &fl)) {
 		if (errno == EAGAIN || errno == EACCES) {
@@ -611,6 +550,9 @@ static int zlog_rotater_unlock(zlog_rotater_t *a_rotater)
 	int rc = 0;
 	struct flock fl;
 
+	if (!a_rotater->lock_file)
+		return 0;
+
 	fl.l_type = F_UNLCK;
 	fl.l_start = 0;
 	fl.l_whence = SEEK_SET;
@@ -620,8 +562,6 @@ static int zlog_rotater_unlock(zlog_rotater_t *a_rotater)
 		rc = -1;
 		zc_error("unlock fd[%s] fail, errno[%d]", a_rotater->lock_fd, errno);
 	}
-
-	a_rotater->is_rotating = '0';
 
 	if (pthread_mutex_unlock(&(a_rotater->lock_mutex))) {
 		rc = -1;
@@ -639,6 +579,10 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 	int rc = 0;
 	struct zlog_stat info;
 
+	if (a_rotater->is_rotating == '1') {
+		return 0;
+	}
+
 	zc_assert(base_path, -1);
 
 	if (zlog_rotater_trylock(a_rotater)) {
@@ -646,10 +590,16 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 		return 0;
 	}
 
+	if (a_rotater->is_rotating == '1') {
+		rc = 0;
+		goto exit;
+	}
+	a_rotater->is_rotating = '1';
+
 	if (stat(base_path, &info)) {
 		rc = -1;
 		zc_error("stat [%s] fail, errno[%d]", base_path, errno);
-		goto exit;
+		goto err;
 	}
 
 	if (info.st_size + msg_len <= archive_max_size) {
@@ -657,7 +607,7 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 		 * may alread rotate by oth process or thread,
 		 * return */
 		rc = 0;
-		goto exit;
+		goto err;
 	}
 
 	/* begin list and move files */
@@ -669,6 +619,8 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 	} /* else if (rc == 0) */
 
 	//zc_debug("zlog_rotater_file_ls_mv success");
+err:
+	a_rotater->is_rotating = '0';
 
 exit:
 	/* unlock file */

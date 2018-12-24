@@ -9,12 +9,14 @@ OBJ=    \
   conf.o    \
   event.o    \
   format.o    \
+  fname_fd.o    \
   level.o    \
   level_list.o    \
   mdc.o    \
   record.o    \
   record_table.o    \
   rotater.o    \
+  rotater_head.o    \
   rule.o    \
   spec.o    \
   thread.o    \
@@ -100,6 +102,8 @@ event.o: event.c fmacros.h zc_defs.h zc_profile.h zc_arraylist.h \
  zc_hashtable.h zc_xplatform.h zc_util.h event.h
 format.o: format.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
  zc_xplatform.h zc_util.h thread.h event.h buf.h mdc.h spec.h format.h
+fname_fd.o: fname_fd.c fname_fd.h zc_defs.h zc_profile.h \
+ zc_xplatform.h zc_util.h
 level.o: level.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
  zc_xplatform.h zc_util.h level.h
 level_list.o: level_list.c zc_defs.h zc_profile.h zc_arraylist.h \
@@ -112,6 +116,8 @@ record_table.o: record_table.c zc_defs.h zc_profile.h zc_arraylist.h \
  zc_hashtable.h zc_xplatform.h zc_util.h record_table.h record.h
 rotater.o: rotater.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
  zc_xplatform.h zc_util.h rotater.h
+rotater_head.o: rotater_head.c zc_defs.h zc_profile.h \
+ zc_xplatform.h zc_util.h rotater_head.h
 rule.o: rule.c fmacros.h rule.h zc_defs.h zc_profile.h zc_arraylist.h \
  zc_hashtable.h zc_xplatform.h zc_util.h format.h thread.h event.h buf.h \
  mdc.h rotater.h record.h level_list.h level.h spec.h

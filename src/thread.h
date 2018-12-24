@@ -13,6 +13,7 @@
 #include "event.h"
 #include "buf.h"
 #include "mdc.h"
+#include "rotater_head.h"
 
 typedef struct {
 	int init_version;
@@ -25,11 +26,13 @@ typedef struct {
 	zlog_buf_t *pre_msg_buf;
 	zlog_buf_t *msg_buf;
 
+	zc_arraylist_t *fname_fds;
 	char *pre_file_path;
 	int fd;
 	int date_changed;
 	zlog_mdc_kv_t *cur_mdc_kv;
 	char *cur_time_str;
+	zlog_rotater_t *rotater;
 } zlog_thread_t;
 
 

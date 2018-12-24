@@ -44,18 +44,29 @@ void zlog_thread_del(zlog_thread_t * a_thread)
 	zc_assert(a_thread,);
 	if (a_thread->mdc)
 		zlog_mdc_del(a_thread->mdc);
+
 	if (a_thread->event)
 		zlog_event_del(a_thread->event);
+
 	if (a_thread->pre_path_buf)
 		zlog_buf_del(a_thread->pre_path_buf);
+
 	if (a_thread->path_buf)
 		zlog_buf_del(a_thread->path_buf);
+
 	if (a_thread->archive_path_buf)
 		zlog_buf_del(a_thread->archive_path_buf);
+
 	if (a_thread->pre_msg_buf)
 		zlog_buf_del(a_thread->pre_msg_buf);
+
 	if (a_thread->msg_buf)
 		zlog_buf_del(a_thread->msg_buf);
+
+	if (a_thread->fname_fds) {
+		zc_arraylist_del(a_thread->fname_fds);
+		a_thread->fname_fds = NULL;
+	}
 
 	if (a_thread->pre_file_path)
 		free(a_thread->pre_file_path);
@@ -64,6 +75,9 @@ void zlog_thread_del(zlog_thread_t * a_thread)
 		fsync(a_thread->fd);
 		close(a_thread->fd);
 	}
+
+	if (a_thread->rotater)
+		zlog_rotater_del(a_thread->rotater);
 
 	free(a_thread);
 	zc_debug("zlog_thread_del[%p]", a_thread);

@@ -68,6 +68,7 @@ static int zlog_spec_write_time(zlog_spec_t * a_spec, zlog_thread_t * a_thread, 
 		a_cache->len = strftime(a_cache->str, sizeof(a_cache->str), a_spec->time_fmt, time_local);
 		a_cache->sec = now_sec;
 
+		a_thread->date_changed = 1;
 		a_thread->cur_time_str = a_cache->str;
 	}
 
@@ -200,7 +201,6 @@ static int zlog_spec_write_percent(zlog_spec_t * a_spec, zlog_thread_t * a_threa
 static int zlog_spec_write_pid(zlog_spec_t * a_spec, zlog_thread_t * a_thread, zlog_buf_t * a_buf)
 {
 	/* 1st in event lifecycle */
-	zc_debug("call zlog_spec_write_pid()");
 	if (!a_thread->event->pid) {
 		a_thread->event->pid = getpid();
 

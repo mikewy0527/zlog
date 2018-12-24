@@ -27,14 +27,6 @@ typedef struct zlog_rule_s zlog_rule_t;
 
 typedef int (*zlog_rule_output_fn) (zlog_rule_t * a_rule, zlog_thread_t * a_thread);
 
-typedef struct zlog_fname_fd_s {
-	int fd;
-	int level;
-	char mdc[MAXLEN_CFG_NAME + 1];
-	char time_str[MAXLEN_CFG_NAME + 1];
-	int is_reopening;
-} zlog_fname_fd_t;
-
 struct zlog_rule_s {
 	char category[MAXLEN_CFG_NAME + 1];
 	char compare_char;
@@ -90,14 +82,14 @@ struct zlog_rule_s {
 };
 
 zlog_rule_t *zlog_rule_new(char * line,
-		zc_arraylist_t * levels,
-		zlog_format_t * default_format,
-		zc_arraylist_t * formats,
-		unsigned int file_perms,
-		size_t fsync_period,
-		long archive_max_size,
-		int archive_max_count,
-		int * time_cache_count);
+						   zc_arraylist_t * levels,
+						   zlog_format_t * default_format,
+						   zc_arraylist_t * formats,
+						   unsigned int file_perms,
+						   size_t fsync_period,
+						   long archive_max_size,
+						   int archive_max_count,
+						   int * time_cache_count);
 
 void zlog_rule_del(zlog_rule_t * a_rule);
 void zlog_rule_profile(zlog_rule_t * a_rule, int flag);

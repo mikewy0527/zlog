@@ -86,14 +86,30 @@ void zlog_conf_profile(zlog_conf_t * a_conf, int flag)
 void zlog_conf_del(zlog_conf_t * a_conf)
 {
 	zc_assert(a_conf,);
-	if (a_conf->file) free(a_conf->file);
-	if (a_conf->rotate_lock_file) free(a_conf->rotate_lock_file);
-	if (a_conf->default_format_line) free(a_conf->default_format_line);
-	if (a_conf->rotater) zlog_rotater_del(a_conf->rotater);
-	if (a_conf->levels) zlog_level_list_del(a_conf->levels);
-	if (a_conf->default_format) zlog_format_del(a_conf->default_format);
-	if (a_conf->formats) zc_arraylist_del(a_conf->formats);
-	if (a_conf->rules) zc_arraylist_del(a_conf->rules);
+	if (a_conf->file)
+		free(a_conf->file);
+
+	if (a_conf->rotate_lock_file)
+		free(a_conf->rotate_lock_file);
+
+	if (a_conf->default_format_line)
+		free(a_conf->default_format_line);
+
+	if (a_conf->rotater)
+		zlog_rotater_del(a_conf->rotater);
+
+	if (a_conf->levels)
+		zlog_level_list_del(a_conf->levels);
+
+	if (a_conf->default_format)
+		zlog_format_del(a_conf->default_format);
+
+	if (a_conf->formats)
+		zc_arraylist_del(a_conf->formats);
+
+	if (a_conf->rules)
+		zc_arraylist_del(a_conf->rules);
+
 	free(a_conf);
 	zc_debug("zlog_conf_del[%p]");
 	return;
