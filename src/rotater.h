@@ -18,9 +18,12 @@
  * 0	no rotate, or rotate and success
  */
 int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
-		char *base_path, size_t msg_len,
-		char *archive_path, long archive_max_size, int archive_max_count,
-		int file_open_flags, unsigned int file_perms, int *orig_fd);
+						char *base_path,
+						char *archive_path,
+						int archive_max_count,
+						int file_open_flags,
+						unsigned int file_perms,
+						int *orig_fd);
 
 void zlog_rotater_profile(zlog_rotater_t *a_rotater, int flag);
 

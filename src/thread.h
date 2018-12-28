@@ -27,7 +27,6 @@ typedef struct {
 	zlog_buf_t *msg_buf;
 
 	zc_arraylist_t *fname_fds;
-	char *pre_file_path;
 	int fd;
 	int date_changed;
 	zlog_mdc_kv_t *cur_mdc_kv;

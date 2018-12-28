@@ -14,5 +14,6 @@
 #include "zc_hashtable.h"
 #include "zc_xplatform.h"
 #include "zc_util.h"
+#include "zc_atomic.h"
 
 #endif

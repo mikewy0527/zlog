@@ -129,9 +129,14 @@ static int zlog_rule_check_reopen_static_file(zlog_rule_t * a_rule, zlog_thread_
 {
 	int rc = 0;
 	int fd;
-	struct stat stb;
+	struct zlog_stat stb;
 	int do_file_reload = 0;
 	int redo_inode_stat = 0;
+	struct timeval time_stamp;
+
+	gettimeofday(&time_stamp, NULL);
+	if (time_stamp.tv_sec - a_thread->event->time_local_sec < 1)
+		return 0;
 
 	if (stat(a_rule->file_path, &stb)) {
 		if (errno != ENOENT) {
@@ -250,6 +255,7 @@ static int zlog_rule_output_static_file_rotate(zlog_rule_t * a_rule, zlog_thread
 {
 	size_t len;
 	struct zlog_stat info;
+	struct timeval time_stamp;
 
 	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
 		zc_error("zlog_format_gen_msg fail");
@@ -275,29 +281,33 @@ static int zlog_rule_output_static_file_rotate(zlog_rule_t * a_rule, zlog_thread
 		return 0;
 	}
 
-	if (zlog_env_conf->rotater->is_rotating == '1') {
+	ATOM_CASB(&(a_rule->file_size), a_rule->file_size, a_rule->file_size + len);
+	if (a_rule->file_size < a_rule->archive_max_size) {
 		return 0;
 	}
 
-	if (stat(a_rule->file_path, &info)) {
-		zc_warn("stat [%s] fail, errno[%d], maybe in rotating", a_rule->file_path, errno);
+	if (zlog_env_conf->rotater->is_rotating) {
 		return 0;
 	}
 
-	/* file not so big, return */
-	if (info.st_size + len < a_rule->archive_max_size)
-		return 0;
+	ATOM_CASB(&(a_rule->file_size), a_rule->file_size, 0);
 
 	if (zlog_rotater_rotate(zlog_env_conf->rotater,
-							a_rule->file_path, len,
+							a_rule->file_path,
 							zlog_rule_gen_archive_path(a_rule, a_thread),
-							a_rule->archive_max_size, a_rule->archive_max_count,
-							a_rule->file_open_flags, a_rule->file_perms,
+							a_rule->archive_max_count,
+							a_rule->file_open_flags,
+							a_rule->file_perms,
 							&(a_rule->static_fd))
 		) {
 		zc_error("zlog_rotater_rotate fail");
 		return -1;
 	} /* success or no rotation do nothing */
+
+	/* update the size of new file */
+	if (!stat(a_rule->file_path, &info)) {
+		ATOM_CASB(&(a_rule->file_size), a_rule->file_size, info.st_size);
+	}
 
 	return 0;
 }
@@ -738,6 +748,11 @@ static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_threa
 		return 0;
 	}
 
+	ATOM_CASB(&(a_rule->file_size), a_rule->file_size, a_rule->file_size + len);
+	if (a_rule->file_size < a_rule->archive_max_size) {
+		return 0;
+	}
+
 	if (a_rule->path_spec_flag & PATH_USE_TID) {
 		if (!a_thread->rotater) {
 			a_thread->rotater = zlog_rotater_new(NULL);
@@ -751,30 +766,28 @@ static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_threa
 		a_rotater = zlog_env_conf->rotater;
 	}
 
-	if (a_rotater->is_rotating == '1') {
+	if (a_rotater->is_rotating) {
 		return 0;
 	}
 
-	if (stat(path, &info)) {
-		zc_warn("stat [%s] fail, errno[%d], maybe in rotating", path, errno);
-		return 0;
-	}
-
-	/* file not so big, return */
-	if (info.st_size + len < a_rule->archive_max_size) {
-		return 0;
-	}
+	ATOM_CASB(&(a_rule->file_size), a_rule->file_size, 0);
 
 	if (zlog_rotater_rotate(a_rotater,
-							path, len,
+							path,
 							zlog_rule_gen_archive_path(a_rule, a_thread),
-							a_rule->archive_max_size, a_rule->archive_max_count,
-							a_rule->file_open_flags, a_rule->file_perms,
+							a_rule->archive_max_count,
+							a_rule->file_open_flags,
+							a_rule->file_perms,
 							&(a_fname_fd->fd))
 		) {
 		zc_error("zlog_rotater_rotate fail");
 		return -1;
 	} /* success or no rotation do nothing */
+
+	/* update the size of new file */
+	if (!stat(a_rule->file_path, &info)) {
+		ATOM_CASB(&(a_rule->file_size), a_rule->file_size, info.st_size);
+	}
 
 	return 0;
 }
@@ -1257,7 +1270,7 @@ zlog_rule_t *zlog_rule_new(char *line,
 				a_rule->output = zlog_rule_output_dynamic_file_rotate;
 			}
 		} else {
-			struct stat stb;
+			struct zlog_stat stb;
 
 			if (a_rule->archive_max_size <= 0) {
 				a_rule->output = zlog_rule_output_static_file_single;

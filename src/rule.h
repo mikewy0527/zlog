@@ -50,16 +50,10 @@ struct zlog_rule_s {
 	int is_reopening;
 
 	pthread_mutex_t lock_mutex;
-//	int use_tid;
-//	int use_date;
-//	int use_mdc;
-//	int use_level;
 	zc_arraylist_t *fname_fds;
 	int path_spec_flag;
-	char *pre_file_path;
-//	int need_reopen;
-//	int reopen_done;
 
+	volatile long file_size;
 	long archive_max_size;
 	int archive_max_count;
 	char *archive_path;

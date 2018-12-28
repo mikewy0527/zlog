@@ -75,6 +75,7 @@ int zc_arraylist_reduce_size(zc_arraylist_t *a_list)
 		return -1;
 	}
 
+	a_list->array = (void **)tmp;
 	a_list->size = a_list->len;
 
 	return 0;

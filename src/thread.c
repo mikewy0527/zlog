@@ -68,9 +68,6 @@ void zlog_thread_del(zlog_thread_t * a_thread)
 		a_thread->fname_fds = NULL;
 	}
 
-	if (a_thread->pre_file_path)
-		free(a_thread->pre_file_path);
-
 	if (a_thread->fd) {
 		fsync(a_thread->fd);
 		close(a_thread->fd);

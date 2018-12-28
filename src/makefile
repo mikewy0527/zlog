@@ -120,7 +120,7 @@ rotater_head.o: rotater_head.c zc_defs.h zc_profile.h \
  zc_xplatform.h zc_util.h rotater_head.h
 rule.o: rule.c fmacros.h rule.h zc_defs.h zc_profile.h zc_arraylist.h \
  zc_hashtable.h zc_xplatform.h zc_util.h format.h thread.h event.h buf.h \
- mdc.h rotater.h record.h level_list.h level.h spec.h
+ mdc.h rotater.h record.h level_list.h level.h spec.h zc_atomic.h
 spec.o: spec.c fmacros.h spec.h event.h zc_defs.h zc_profile.h \
  zc_arraylist.h zc_hashtable.h zc_xplatform.h zc_util.h buf.h thread.h \
  mdc.h level_list.h level.h
