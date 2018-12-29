@@ -53,7 +53,7 @@ struct zlog_rule_s {
 	zc_arraylist_t *fname_fds;
 	int path_spec_flag;
 
-	volatile long file_size;
+	volatile size_t file_size;
 	long archive_max_size;
 	int archive_max_count;
 	char *archive_path;

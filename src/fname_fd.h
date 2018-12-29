@@ -17,7 +17,7 @@ struct zlog_fname_fd_s {
 	int level;
 	char mdc[MAXLEN_CFG_NAME + 1];
 	char time_str[MAXLEN_CFG_NAME + 1];
-	int is_reopening;
+	volatile int is_reopening;
 } ;
 
 void zlog_fname_fd_del(zlog_fname_fd_t * a_fname_fd);

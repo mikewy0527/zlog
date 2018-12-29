@@ -32,6 +32,7 @@ typedef struct {
 	zlog_mdc_kv_t *cur_mdc_kv;
 	char *cur_time_str;
 	zlog_rotater_t *rotater;
+	volatile size_t file_size;
 } zlog_thread_t;
 
 

@@ -514,7 +514,7 @@ err:
 }
 
 /*******************************************************************************/
-static int zlog_rotater_process_trylock(zlog_rotater_t *a_rotater)
+static int zlog_rotater_trylock(zlog_rotater_t *a_rotater)
 {
 	struct flock fl;
 
@@ -548,7 +548,7 @@ static int zlog_rotater_process_trylock(zlog_rotater_t *a_rotater)
 	return 0;
 }
 
-static int zlog_rotater_process_unlock(zlog_rotater_t *a_rotater)
+static int zlog_rotater_unlock(zlog_rotater_t *a_rotater)
 {
 	int rc = 0;
 	struct flock fl;
@@ -585,7 +585,7 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 
 	zc_assert(base_path, -1);
 
-	if (zlog_rotater_process_trylock(a_rotater)) {
+	if (zlog_rotater_trylock(a_rotater)) {
 		zc_warn("zlog_rotater_trylock fail, maybe lock by other process or threads");
 		return 0;
 	}
@@ -599,7 +599,7 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 	} /* else if (rc == 0) */
 
 	/* unlock file */
-	if (zlog_rotater_process_unlock(a_rotater)) {
+	if (zlog_rotater_unlock(a_rotater)) {
 		zc_error("zlog_rotater_unlock fail");
 	}
 

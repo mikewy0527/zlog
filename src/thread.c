@@ -135,7 +135,6 @@ zlog_thread_t *zlog_thread_new(int init_version, size_t buf_size_min, size_t buf
 		goto err;
 	}
 
-
 	//zlog_thread_profile(a_thread, ZC_DEBUG);
 	return a_thread;
 err:

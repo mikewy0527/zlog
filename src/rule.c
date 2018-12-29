@@ -93,25 +93,6 @@ static int zlog_rule_lock(pthread_mutex_t *lock_mutex)
 	return 0;
 }
 
-static int zlog_rule_trylock(pthread_mutex_t *lock_mutex)
-{
-	int rc;
-
-	if (!lock_mutex)
-		return 0;
-
-	rc = pthread_mutex_trylock(lock_mutex);
-	if (rc == EBUSY) {
-		zc_warn("pthread_mutex_trylock fail, as lock_mutex is locked by other threads");
-		return -1;
-	} else if (rc != 0) {
-		zc_error("pthread_mutex_trylock fail, rc[%d]", rc);
-		return -1;
-	}
-
-	return 0;
-}
-
 static int zlog_rule_unlock(pthread_mutex_t *lock_mutex)
 {
 	if (!lock_mutex)
@@ -154,16 +135,9 @@ static int zlog_rule_check_reopen_static_file(zlog_rule_t * a_rule, zlog_thread_
 		return 0;
 	}
 
-	if (a_rule->is_reopening) {
+	if (!ATOM_CASB(&(a_rule->is_reopening), 0, 1)) {
 		return 0;
 	}
-
-	if (zlog_rule_trylock(&(a_rule->lock_mutex))) {
-		zc_warn("zlog_rule_trylock fail, maybe lock by other process or threads");
-		return 0;
-	}
-
-	a_rule->is_reopening = 1;
 
 	fd = open(a_rule->file_path,
 		O_WRONLY | O_APPEND | O_CREAT | a_rule->file_open_flags,
@@ -189,10 +163,8 @@ static int zlog_rule_check_reopen_static_file(zlog_rule_t * a_rule, zlog_thread_
 	a_rule->static_ino = stb.st_ino;
 
 err:
-	a_rule->is_reopening = 0;
-
-	if (zlog_rule_unlock(&(a_rule->lock_mutex))) {
-		zc_error("zlog_rule_unlock fail");
+	if (!ATOM_CASB(&(a_rule->is_reopening), 1, 0)) {
+		rc = -1;
 	}
 
 	return rc;
@@ -255,7 +227,6 @@ static int zlog_rule_output_static_file_rotate(zlog_rule_t * a_rule, zlog_thread
 {
 	size_t len;
 	struct zlog_stat info;
-	struct timeval time_stamp;
 
 	if (zlog_format_gen_msg(a_rule->format, a_thread)) {
 		zc_error("zlog_format_gen_msg fail");
@@ -587,16 +558,9 @@ static int zlog_rule_openfile_in_trylock(zlog_rule_t * a_rule,
 
 	path = zlog_buf_str(a_thread->path_buf);
 
-	if (a_fname_fd->is_reopening) {
+	if (!ATOM_CASB(&(a_fname_fd->is_reopening), 0, 1)) {
 		return 0;
 	}
-
-	if (zlog_rule_trylock(lock_mutex)) {
-		zc_warn("zlog_rule_trylock fail, maybe lock by other process or threads");
-		return 0;
-	}
-
-	a_fname_fd->is_reopening = 1;
 
 	fd = open(path,
 			a_rule->file_open_flags | O_WRONLY | O_APPEND | O_CREAT,
@@ -616,10 +580,8 @@ static int zlog_rule_openfile_in_trylock(zlog_rule_t * a_rule,
 	}
 
 err:
-	a_fname_fd->is_reopening = 0;
-
-	if (zlog_rule_unlock(lock_mutex)) {
-		zc_error("zlog_rule_unlock fail");
+	if (!ATOM_CASB(&(a_fname_fd->is_reopening), 1, 0)) {
+		rc = -1;
 	}
 
 	return rc;
@@ -748,12 +710,12 @@ static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_threa
 		return 0;
 	}
 
-	ATOM_CASB(&(a_rule->file_size), a_rule->file_size, a_rule->file_size + len);
-	if (a_rule->file_size < a_rule->archive_max_size) {
-		return 0;
-	}
-
 	if (a_rule->path_spec_flag & PATH_USE_TID) {
+		ATOM_CASB(&(a_thread->file_size), a_thread->file_size, a_thread->file_size + len);
+		if (a_thread->file_size < a_rule->archive_max_size) {
+			return 0;
+		}
+
 		if (!a_thread->rotater) {
 			a_thread->rotater = zlog_rotater_new(NULL);
 			if (!a_thread->rotater) {
@@ -762,15 +724,26 @@ static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_threa
 			}
 		}
 		a_rotater = a_thread->rotater;
+
+		if (a_rotater->is_rotating) {
+			return 0;
+		}
+
+		ATOM_CASB(&(a_thread->file_size), a_thread->file_size, 0);
 	} else {
+		ATOM_CASB(&(a_rule->file_size), a_rule->file_size, a_rule->file_size + len);
+		if (a_rule->file_size < a_rule->archive_max_size) {
+			return 0;
+		}
+
 		a_rotater = zlog_env_conf->rotater;
-	}
 
-	if (a_rotater->is_rotating) {
-		return 0;
-	}
+		if (a_rotater->is_rotating) {
+			return 0;
+		}
 
-	ATOM_CASB(&(a_rule->file_size), a_rule->file_size, 0);
+		ATOM_CASB(&(a_rule->file_size), a_rule->file_size, 0);
+	}
 
 	if (zlog_rotater_rotate(a_rotater,
 							path,
@@ -785,8 +758,12 @@ static int zlog_rule_output_dynamic_file_rotate(zlog_rule_t * a_rule, zlog_threa
 	} /* success or no rotation do nothing */
 
 	/* update the size of new file */
-	if (!stat(a_rule->file_path, &info)) {
-		ATOM_CASB(&(a_rule->file_size), a_rule->file_size, info.st_size);
+	if (!stat(path, &info)) {
+		if (a_rule->path_spec_flag & PATH_USE_TID) {
+			ATOM_CASB(&(a_thread->file_size), a_thread->file_size, info.st_size);
+		} else {
+			ATOM_CASB(&(a_rule->file_size), a_rule->file_size, info.st_size);
+		}
 	}
 
 	return 0;
