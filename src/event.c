@@ -77,23 +77,33 @@ zlog_event_t *zlog_event_new(int time_cache_count)
 
 	a_event->host_name_len = strlen(a_event->host_name);
 
-	/* tid is bound to a_event
-	 * as in whole lifecycle event persists
-	 * even fork to oth pid, tid not change
-	 */
-	a_event->tid = pthread_self();
-
-	a_event->tid_str_len = sprintf(a_event->tid_str, "%lu", (unsigned long)a_event->tid);
-	a_event->tid_hex_str_len = sprintf(a_event->tid_hex_str, "0x%lu", (unsigned long)a_event->tid);
-
-	a_event->ktid = syscall(SYS_gettid);
-	a_event->ktid_str_len = sprintf(a_event->ktid_str, "%lu", (unsigned long)a_event->ktid);
+	zlog_event_set_pidtid(a_event);
 
 	//zlog_event_profile(a_event, ZC_DEBUG);
 	return a_event;
 err:
 	zlog_event_del(a_event);
 	return NULL;
+}
+
+/*******************************************************************************/
+void zlog_event_set_pidtid(zlog_event_t * a_event)
+{
+	a_event->pid = getpid();
+	a_event->pid_str_len = snprintf(a_event->pid_str, sizeof(a_event->pid_str), "%u", a_event->pid);
+
+	/* tid is bound to a_event
+	 * as in whole lifecycle event persists
+	 * even fork to oth pid, tid not change
+	 */
+	a_event->tid = pthread_self();
+
+	a_event->tid_str_len = snprintf(a_event->tid_str, sizeof(a_event->tid_str), "%lu", (unsigned long)a_event->tid);
+	a_event->tid_hex_str_len = snprintf(a_event->tid_hex_str, sizeof(a_event->tid_hex_str), "0x%lu", (unsigned long)a_event->tid);
+
+	a_event->ktid = syscall(SYS_gettid);
+	a_event->ktid_str_len = snprintf(a_event->ktid_str, sizeof(a_event->ktid_str), "%lu", (unsigned long)a_event->ktid);
+
 }
 
 /*******************************************************************************/
@@ -118,12 +128,6 @@ void zlog_event_set_fmt(zlog_event_t * a_event,
 	a_event->generate_cmd = ZLOG_FMT;
 	a_event->str_format = str_format;
 	va_copy(a_event->str_args, str_args);
-
-	/* pid should fetch eveytime, as no one knows,
-	 * when does user fork his process
-	 * so clean here, and fetch at spec.c
-	 */
-	a_event->pid = (pid_t) 0;
 
 	/* in a event's life cycle, time will be get when spec need,
 	 * and keep unchange though all event's life cycle
@@ -154,12 +158,6 @@ void zlog_event_set_hex(zlog_event_t * a_event,
 	a_event->generate_cmd = ZLOG_HEX;
 	a_event->hex_buf = hex_buf;
 	a_event->hex_buf_len = hex_buf_len;
-
-	/* pid should fetch eveytime, as no one knows,
-	 * when does user fork his process
-	 * so clean here, and fetch at spec.c
-	 */
-	a_event->pid = (pid_t) 0;
 
 	/* in a event's life cycle, time will be get when spec need,
 	 * and keep unchange though all event's life cycle

@@ -75,6 +75,8 @@ zlog_event_t *zlog_event_new(int time_cache_count);
 void zlog_event_del(zlog_event_t * a_event);
 void zlog_event_profile(zlog_event_t * a_event, int flag);
 
+void zlog_event_set_pidtid(zlog_event_t * a_event);
+
 void zlog_event_set_fmt(zlog_event_t * a_event,
 			char *category_name, size_t category_name_len,
 			const char *file, size_t file_len, const char *func, size_t func_len, long line, int level,

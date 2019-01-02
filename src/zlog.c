@@ -460,6 +460,27 @@ err:
 } while (0)
 
 /*******************************************************************************/
+void zlog_reset_pidtid(void)
+{
+	zlog_thread_t *a_thread;
+
+	pthread_rwlock_rdlock(&zlog_env_lock);
+
+	if (!zlog_env_is_init) {
+		zc_error("never call zlog_init() or dzlog_init() before");
+		goto exit;
+	}
+
+	zlog_fetch_thread(a_thread, exit);
+
+	zlog_event_set_pidtid(a_thread->event);
+
+exit:
+	pthread_rwlock_unlock(&zlog_env_lock);
+	return;
+}
+
+/*******************************************************************************/
 int zlog_put_mdc(const char *key, const char *value)
 {
 	int rc = 0;
@@ -1003,7 +1024,7 @@ int zlog_set_record(const char *rname, zlog_record_fn record_output)
 		zlog_rule_set_record(a_rule, zlog_env_records);
 	}
 
-      zlog_set_record_exit:
+zlog_set_record_exit:
 	rd = pthread_rwlock_unlock(&zlog_env_lock);
 	if (rd) {
 		zc_error("pthread_rwlock_unlock fail, rd=[%d]", rd);
@@ -1018,5 +1039,7 @@ int zlog_level_enabled(zlog_category_t *category, const int level)
 	return category && (zlog_category_needless_level(category, level) == 0);
 }
 
-
-const char *zlog_version(void) { return ZLOG_VERSION; }
+const char *zlog_version(void)
+{
+	return ZLOG_VERSION;
+}

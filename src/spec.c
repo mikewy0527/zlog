@@ -200,18 +200,6 @@ static int zlog_spec_write_percent(zlog_spec_t * a_spec, zlog_thread_t * a_threa
 
 static int zlog_spec_write_pid(zlog_spec_t * a_spec, zlog_thread_t * a_thread, zlog_buf_t * a_buf)
 {
-	/* 1st in event lifecycle */
-	if (!a_thread->event->pid) {
-		a_thread->event->pid = getpid();
-
-		/* compare with previous event */
-		if (a_thread->event->pid != a_thread->event->last_pid) {
-			a_thread->event->last_pid = a_thread->event->pid;
-			a_thread->event->pid_str_len
-				= sprintf(a_thread->event->pid_str, "%u", a_thread->event->pid);
-		}
-	}
-
 	return zlog_buf_append(a_buf, a_thread->event->pid_str, a_thread->event->pid_str_len);
 }
 

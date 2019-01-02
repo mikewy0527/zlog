@@ -33,6 +33,13 @@ void zlog_profile(void);
 zlog_category_t *zlog_get_category(const char *cname);
 int zlog_level_enabled(zlog_category_t *category, const int level);
 
+/* for multi-process application, if did not call exec*() in the child process
+ * immediately after fork(), caller need to call this function in the child
+ * process to reset the process id and thread id before logging, to make sure
+ * the child process's process id and thread id is correct.
+ */
+void zlog_reset_pidtid(void);
+
 int zlog_put_mdc(const char *key, const char *value);
 char *zlog_get_mdc(const char *key);
 void zlog_remove_mdc(const char *key);

@@ -25,6 +25,7 @@
 static void zc_time(char *time_str, size_t time_str_size)
 {
 	time_t t_sec;
+	time_t t_millisec;
 	time_t t_microsec;
 	struct tm local_time;
 	struct timeval tv;
@@ -32,17 +33,19 @@ static void zc_time(char *time_str, size_t time_str_size)
 
 	if (gettimeofday(&tv, NULL) == 0) {
 		t_sec = tv.tv_sec;
-		t_microsec = tv.tv_usec / 1000;
+		t_millisec = tv.tv_usec / 1000;
+		t_microsec = tv.tv_usec % 1000;
 	} else {
 		t_sec = time(NULL);
+		t_millisec = 0;
 		t_microsec = 0;
 	}
 
 	localtime_r(&t_sec, &local_time);
 	strftime(time_str, time_str_size, "%m-%d %T", &local_time);
 	len = strlen(time_str);
-	snprintf(time_str + len, time_str_size - len, ".%03ld (%lu)",
-			t_microsec, syscall(SYS_gettid));
+	snprintf(time_str + len, time_str_size - len, ",%03ld.%03ld (%lu)",
+			t_millisec, t_microsec, syscall(SYS_gettid));
 
 	return;
 }
@@ -50,7 +53,7 @@ static void zc_time(char *time_str, size_t time_str_size)
 int zc_profile_inner(int flag, const char *file, const long line, const char *fmt, ...)
 {
 	va_list args;
-	char time_str[32 + 1];
+	char time_str[36 + 1];
 	FILE *fp = NULL;
 
 	static char *debug_log = NULL;
